@@ -49,69 +49,72 @@ class TrackerRequestHandler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
-        parsed = urlparse(self.path)
-        route = parsed.path
+        try:
+            parsed = urlparse(self.path)
+            route = parsed.path
 
-        if route == "/api/data":
-            json_path = os.path.join(DATA_DIR, "career_data.json")
-            if not os.path.exists(json_path):
-                data = save_parser.run_full_pipeline()
+            if route == "/api/data":
+                json_path = os.path.join(DATA_DIR, "career_data.json")
+                if not os.path.exists(json_path):
+                    data = save_parser.run_full_pipeline()
+                    return self._send_json(data)
+                with open(json_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
                 return self._send_json(data)
-            with open(json_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            return self._send_json(data)
 
-        if route == "/api/saves":
-            saves = save_parser.find_save_files()
-            return self._send_json({"saves": [os.path.basename(s) for s in saves]})
+            if route == "/api/saves":
+                saves = save_parser.find_save_files()
+                return self._send_json({"saves": [os.path.basename(s) for s in saves]})
 
-        if route == "/api/reload":
-            qs = parse_qs(parsed.query)
-            save_name = qs.get("save", [None])[0]
-            target = None
-            if save_name:
-                cand_saves = os.path.join(SAVES_DIR, os.path.basename(save_name))
-                cand_root = os.path.join(ROOT_DIR, os.path.basename(save_name))
-                if os.path.exists(cand_saves):
-                    target = cand_saves
-                elif os.path.exists(cand_root):
-                    target = cand_root
-            data = save_parser.run_full_pipeline(target)
-            return self._send_json(data)
+            if route == "/api/reload":
+                qs = parse_qs(parsed.query)
+                save_name = qs.get("save", [None])[0]
+                target = None
+                if save_name:
+                    cand_saves = os.path.join(SAVES_DIR, os.path.basename(save_name))
+                    cand_root = os.path.join(ROOT_DIR, os.path.basename(save_name))
+                    if os.path.exists(cand_saves):
+                        target = cand_saves
+                    elif os.path.exists(cand_root):
+                        target = cand_root
+                data = save_parser.run_full_pipeline(target)
+                return self._send_json(data)
 
-        if route == "/api/export/xlsx":
-            xlsx_path = os.path.join(EXPORTS_DIR, "Estatisticas_Jogadores_FC_Andorra_Carreira.xlsx")
-            if not os.path.exists(xlsx_path):
-                save_parser.run_full_pipeline()
-            if os.path.exists(xlsx_path):
-                with open(xlsx_path, "rb") as f:
-                    content = f.read()
-                self.send_response(200)
-                self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-                self.send_header("Content-Disposition", 'attachment; filename="Estatisticas_Jogadores_FC_Andorra_Carreira.xlsx"')
-                self.send_header("Content-Length", str(len(content)))
-                self.end_headers()
-                self.wfile.write(content)
-                return
-            return self._send_json({"error": "Arquivo XLSX nao encontrado"}, 404)
+            if route == "/api/export/xlsx":
+                xlsx_path = os.path.join(EXPORTS_DIR, "Estatisticas_Jogadores_FC_Andorra_Carreira.xlsx")
+                if not os.path.exists(xlsx_path):
+                    save_parser.run_full_pipeline()
+                if os.path.exists(xlsx_path):
+                    with open(xlsx_path, "rb") as f:
+                        content = f.read()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                    self.send_header("Content-Disposition", 'attachment; filename="Estatisticas_Jogadores_FC_Andorra_Carreira.xlsx"')
+                    self.send_header("Content-Length", str(len(content)))
+                    self.end_headers()
+                    self.wfile.write(content)
+                    return
+                return self._send_json({"error": "Arquivo XLSX nao encontrado"}, 404)
 
-        if route == "/api/export/csv":
-            csv_path = os.path.join(EXPORTS_DIR, "Estatisticas_Jogadores_FC_Andorra_Carreira.csv")
-            if not os.path.exists(csv_path):
-                save_parser.run_full_pipeline()
-            if os.path.exists(csv_path):
-                with open(csv_path, "rb") as f:
-                    content = f.read()
-                self.send_response(200)
-                self.send_header("Content-Type", "text/csv; charset=utf-8")
-                self.send_header("Content-Disposition", 'attachment; filename="Estatisticas_Jogadores_FC_Andorra_Carreira.csv"')
-                self.send_header("Content-Length", str(len(content)))
-                self.end_headers()
-                self.wfile.write(content)
-                return
-            return self._send_json({"error": "Arquivo CSV nao encontrado"}, 404)
+            if route == "/api/export/csv":
+                csv_path = os.path.join(EXPORTS_DIR, "Estatisticas_Jogadores_FC_Andorra_Carreira.csv")
+                if not os.path.exists(csv_path):
+                    save_parser.run_full_pipeline()
+                if os.path.exists(csv_path):
+                    with open(csv_path, "rb") as f:
+                        content = f.read()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/csv; charset=utf-8")
+                    self.send_header("Content-Disposition", 'attachment; filename="Estatisticas_Jogadores_FC_Andorra_Carreira.csv"')
+                    self.send_header("Content-Length", str(len(content)))
+                    self.end_headers()
+                    self.wfile.write(content)
+                    return
+                return self._send_json({"error": "Arquivo CSV nao encontrado"}, 404)
 
-        return super().do_GET()
+            return super().do_GET()
+        except Exception as e:
+            self._send_json({"error": str(e)}, 500)
 
     def do_POST(self):
         parsed = urlparse(self.path)

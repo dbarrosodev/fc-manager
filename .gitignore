@@ -1,4 +1,4 @@
-# Python cache
+# Python cache & virtual environments
 __pycache__/
 *.py[cod]
 *$py.class
@@ -18,3 +18,10 @@ $RECYCLE.BIN/
 
 # Logs
 *.log
+
+# EA FC binary saves and personal career files (nunca versionar saves binários pessoais reais)
+saves/*
+!saves/.gitkeep
+CmMgr*
+*.save
+*.bin

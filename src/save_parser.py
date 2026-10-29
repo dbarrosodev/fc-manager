@@ -1,6 +1,7 @@
 import os
 import re
 import csv
+import copy
 import json
 import struct
 from datetime import datetime, timedelta
@@ -790,13 +791,17 @@ def parse_save_file(save_path):
         pdata = player_db.get(pid, {})
         p1_code = pdata.get('preferredposition1', 14)
         if p1_code == 0:
-            setor = "Goleiros"
+            setor = "Goleiro"
+            setor_canonico = "goleiro"
         elif p1_code in (1, 2, 3, 4, 5, 6, 7, 8):
             setor = "Defesa"
+            setor_canonico = "defesa"
         elif p1_code in (9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19):
             setor = "Meio-Campo"
+            setor_canonico = "meio"
         else:
             setor = "Ataque"
+            setor_canonico = "ataque"
 
         nat_name = COUNTRY_MAP.get(pdata.get('nationality', 45), "Espanha")
         ident = KNOWN_IDENTITY.get(pid)
@@ -817,13 +822,16 @@ def parse_save_file(save_path):
         if lineup_code == 28:
             status_elenco = "Suplente (Banco)"
             status_curto = "Banco"
+            hierarquia_tatica = "reserva"
         elif lineup_code == 29:
             status_elenco = "Reserva (Não Relacionado)"
             status_curto = "Reserva"
+            hierarquia_tatica = "nao_relacionado"
         else:
             t_pos = POS_MAP.get(lineup_code, 'TIT')
             status_elenco = f"Titular ({t_pos})"
             status_curto = "Titular"
+            hierarquia_tatica = "titular"
 
         p1 = POS_MAP.get(p1_code, 'MC')
         p2 = POS_MAP.get(pdata.get('preferredposition2', -1), '')
@@ -965,12 +973,16 @@ def parse_save_file(save_path):
 
         if mins >= 350:
             status_utilizacao = f"Titular Efetivo ({pct_minutos:.0f}% min)"
+            utilizacao_canonica = "titular_efetivo"
         elif mins >= 180:
             status_utilizacao = f"Rotação Ativa ({pct_minutos:.0f}% min)"
+            utilizacao_canonica = "rotacao"
         elif mins > 0:
             status_utilizacao = f"Suplente Acionado ({pct_minutos:.0f}% min)"
+            utilizacao_canonica = "suplente"
         else:
             status_utilizacao = "Sem Minutos (0%)"
+            utilizacao_canonica = "sem_minutos"
 
         if matches == 0:
             forma_recente = "Sem Amostra"
@@ -988,15 +1000,19 @@ def parse_save_file(save_path):
         if mins >= 270 and matches >= 4:
             amostra_nivel = "Alta"
             amostra_label = f"Alta ({mins}m / {matches}J)"
+            confianca_amostra_canonica = "alta"
         elif mins >= 150 and matches >= 3:
             amostra_nivel = "Moderada"
             amostra_label = f"Moderada ({mins}m / {matches}J)"
+            confianca_amostra_canonica = "moderada"
         elif mins > 0:
             amostra_nivel = "Baixa"
             amostra_label = f"Insuficiente ({mins}m / {matches}J)"
+            confianca_amostra_canonica = "baixa"
         else:
             amostra_nivel = "Nenhuma"
             amostra_label = "Sem minutos (0J)"
+            confianca_amostra_canonica = "nula"
 
         ovr_norm = min(100.0, max(35.0, (ovr - 50) * 2.2))
         pot_age_norm = min(100.0, max(35.0, (pot - 55) * 2.0 + max(0, (25 - age) * 1.5)))
@@ -1089,12 +1105,16 @@ def parse_save_file(save_path):
             "dribles_estrelas": skills,
             "perna_ruim": weak_foot,
             "setor": setor,
+            "setor_canonico": setor_canonico,
             "posicao_principal": p1,
             "posicoes_secundarias": pos_sec_str,
             "todas_posicoes": all_positions,
             "status_elenco": status_elenco,
             "status_curto": status_curto,
+            "hierarquia_tatica": hierarquia_tatica,
             "status_utilizacao": status_utilizacao,
+            "utilizacao_canonica": utilizacao_canonica,
+            "confianca_amostra_canonica": confianca_amostra_canonica,
             "papel_contrato": papel_contrato,
             "funcao_elenco": papel_contrato,
             "emprestado": is_loaned_in,
@@ -1319,27 +1339,98 @@ def parse_save_file(save_path):
     gc_tot = sum(m.get("gols_contra", 0) for m in matches_catalog)
     inv_suffix = " (Invicto!)" if l_tot == 0 and len(matches_catalog) > 0 else ""
 
+    w_liga = sum(1 for m in matches_catalog if m["tipo_competicao"] == "Liga Nacional" and m["resultado"] == "Vitória")
+    d_liga = sum(1 for m in matches_catalog if m["tipo_competicao"] == "Liga Nacional" and m["resultado"] == "Empate")
+    l_liga = sum(1 for m in matches_catalog if m["tipo_competicao"] == "Liga Nacional" and m["resultado"] == "Derrota")
+    j_liga = w_liga + d_liga + l_liga
+    gp_liga = sum(m.get("gols_pro", 0) for m in matches_catalog if m["tipo_competicao"] == "Liga Nacional")
+    gc_liga = sum(m.get("gols_contra", 0) for m in matches_catalog if m["tipo_competicao"] == "Liga Nacional")
+    sg_liga = gp_liga - gc_liga
+    pts_liga = user_l2_row["pontos"] if user_l2_row else (w_liga * 3 + d_liga)
+
+    w_copa = sum(1 for m in matches_catalog if m["tipo_competicao"] != "Liga Nacional" and m["resultado"] == "Vitória")
+    d_copa = sum(1 for m in matches_catalog if m["tipo_competicao"] != "Liga Nacional" and m["resultado"] == "Empate")
+    l_copa = sum(1 for m in matches_catalog if m["tipo_competicao"] != "Liga Nacional" and m["resultado"] == "Derrota")
+    j_copa = w_copa + d_copa + l_copa
+    gp_copa = sum(m.get("gols_pro", 0) for m in matches_catalog if m["tipo_competicao"] != "Liga Nacional")
+    gc_copa = sum(m.get("gols_contra", 0) for m in matches_catalog if m["tipo_competicao"] != "Liga Nacional")
+    sg_copa = gp_copa - gc_copa
+
+    last_match = sorted(matches_catalog, key=lambda x: x["date_int"])[-1] if matches_catalog else None
+    safe_save_path = os.path.join("saves", os.path.basename(save_path)).replace("\\", "/")
+
     validation_report = run_automated_validations(
         squad_list, matches_catalog, player_match_logs, club_competitions, max_possible_season_mins
     )
 
     result = {
         "save_file": os.path.basename(save_path),
-        "save_path": save_path,
+        "save_path": safe_save_path,
         "updated_at": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
         "club": {
             "id": club_id, "nome": club_name, "pais": club_country_name, "liga": club_league_name,
             "treinador": manager_name, "data_atual": curr_date_str, "temporada": "2025/2026 (Temporada 1)",
             "posicao_liga": user_l2_row["posicao"] if user_l2_row else 1,
-            "pontos_liga": user_l2_row["pontos"] if user_l2_row else 0,
+            "pontos_liga": pts_liga,
             "jogos_temporada": len(matches_catalog), "vitorias_temporada": w_tot,
             "empates_temporada": d_tot, "derrotas_temporada": l_tot,
             "gols_pro_temporada": gp_tot, "gols_contra_temporada": gc_tot,
             "campanha_geral": f"{len(matches_catalog)}J: {w_tot}V {d_tot}E {l_tot}D · {gp_tot} GP / {gc_tot} GC{inv_suffix}",
+            "campanha_liga": f"{j_liga}J: {w_liga}V {d_liga}E {l_liga}D · {gp_liga} GP / {gc_liga} GC (SG {sg_liga:+d}) · {pts_liga} pts",
+            "campanha_pre_temporada": f"{j_copa}J: {w_copa}V {d_copa}E {l_copa}D · {gp_copa} GP / {gc_copa} GC (SG {sg_copa:+d})",
             "titulo_pre_temporada": "Campeão — Champions Trophy (€ 1.100.000)" if club_id == 114554 else "Em disputa",
             "maior_goleada": "Real Zaragoza 1 x 5 FC Andorra (23/08/2025)" if club_id == 114554 else "-",
             "valor_elenco_total": total_market_value, "folha_salarial_semanal": total_weekly_wage,
-            "total_gols_elenco": total_goals, "total_assistencias_elenco": total_assists
+            "total_gols_elenco": total_goals, "total_assistencias_elenco": total_assists,
+            "competicoes_separadas": {
+                "liga": {
+                    "nome": club_league_name,
+                    "categoria": "Liga Nacional",
+                    "posicao": user_l2_row["posicao"] if user_l2_row else 1,
+                    "pontos": pts_liga,
+                    "jogos": j_liga,
+                    "vitorias": w_liga,
+                    "empates": d_liga,
+                    "derrotas": l_liga,
+                    "gols_pro": gp_liga,
+                    "gols_contra": gc_liga,
+                    "saldo": sg_liga,
+                    "aproveitamento_pct": round((pts_liga / max(1, j_liga * 3)) * 100, 1)
+                },
+                "pre_temporada": {
+                    "nome": "Champions Trophy",
+                    "categoria": "Pré-Temporada",
+                    "titulo": "Campeão — Champions Trophy (€ 1.100.000)" if club_id == 114554 else "Participação",
+                    "jogos": j_copa,
+                    "vitorias": w_copa,
+                    "empates": d_copa,
+                    "derrotas": l_copa,
+                    "gols_pro": gp_copa,
+                    "gols_contra": gc_copa,
+                    "saldo": sg_copa,
+                    "pontos": w_copa * 3 + d_copa
+                },
+                "total_temporada": {
+                    "jogos": len(matches_catalog),
+                    "vitorias": w_tot,
+                    "empates": d_tot,
+                    "derrotas": l_tot,
+                    "gols_pro": gp_tot,
+                    "gols_contra": gc_tot,
+                    "saldo": gp_tot - gc_tot,
+                    "invicto": (l_tot == 0 and len(matches_catalog) > 0)
+                }
+            },
+            "ultima_partida": {
+                "id": last_match["id"],
+                "data": last_match["data"],
+                "competicao": last_match["competicao"],
+                "adversario": last_match["adversario"],
+                "mando": last_match["mando"],
+                "placar": last_match["placar"],
+                "resultado": last_match["resultado"],
+                "artilheiros": last_match.get("artilheiros", "-")
+            } if last_match else None
         },
         "squad": squad_list,
         "matches": matches_catalog,
@@ -1382,6 +1473,7 @@ def run_automated_validations(squad_list, matches_catalog, player_match_logs, cl
     checks.append({
         "id": 1,
         "titulo": "Conciliação Cruzada de Gols (Partidas × Logs Individuais × Elenco)",
+        "status_canonico": "verificado" if ok_1 else "falhou",
         "status": "OK (VERIFICADO)" if ok_1 else "ERRO",
         "resumo": f"Partidas: {team_gp_total} GP ({team_gp_liga} Liga + {team_gp_copa} Pré-Temp) == Soma dos 90 Logs por Jogo: {logs_g_total} Gols == Soma do Elenco: {indiv_g_total} Gols.",
         "regra": "Os gols acumulados no elenco são recalculados diretamente da soma dos logs por partida e conciliados com o placar de cada confronto."
@@ -1394,6 +1486,7 @@ def run_automated_validations(squad_list, matches_catalog, player_match_logs, cl
     checks.append({
         "id": 2,
         "titulo": "Assistências e Participações em Gol (G+A): Competição vs. Logs por Partida",
+        "status_canonico": "parcial" if nd_ast_logs > 0 else "verificado",
         "status": "PARCIAL (NÃO VERIFICADO POR PARTIDA)" if nd_ast_logs > 0 else "OK (VERIFICADO)",
         "resumo": (
             f"Fórmula G+A validada ({sum(p['gols'] for p in squad_list)}G + {sum(p['assistencias'] for p in squad_list)}A = {sum(p['participacoes_gol'] for p in squad_list)} G+A) "
@@ -1411,6 +1504,7 @@ def run_automated_validations(squad_list, matches_catalog, player_match_logs, cl
     checks.append({
         "id": 3,
         "titulo": "Fonte Única de Minutos e Jogos (Derivados 100% dos Logs por Partida)",
+        "status_canonico": "verificado" if ok_3 else "falhou",
         "status": "OK (VERIFICADO)" if ok_3 else "ERRO",
         "resumo": f"0 divergências entre soma dos logs e tabela do elenco. Teto de {len(matches_catalog)}J ({max_possible_mins}m): máximo registrado é {max_p['nome']} ({max_p['minutos']}m).",
         "regra": "Garante que Jogos (T/R), Minutos e Nota Média do elenco sejam calculados exclusivamente a partir dos registros individuais por partida."
@@ -1421,6 +1515,7 @@ def run_automated_validations(squad_list, matches_catalog, player_match_logs, cl
     checks.append({
         "id": 4,
         "titulo": "Percentuais de Passe/Drible e xG/xA sem Denominador Falso",
+        "status_canonico": "verificado" if ok_4 else "falhou",
         "status": "OK (VERIFICADO)" if ok_4 else "ERRO",
         "resumo": "Campos sem denominador acumulado no save (xG, xA, % passes e % dribles da temporada) exibidos como 'N/D' (nunca 0.00 ou 100% de jogo único).",
         "regra": "Impede que estatísticas de uma única partida (mxif) ou zeros sem tentativas registradas distorçam a análise da temporada."
@@ -1432,6 +1527,7 @@ def run_automated_validations(squad_list, matches_catalog, player_match_logs, cl
     checks.append({
         "id": 5,
         "titulo": "Separação entre Margem de Potencial (POT − OVR) e Evolução Real",
+        "status_canonico": "verificado" if ok_5 else "falhou",
         "status": "OK (VERIFICADO)" if ok_5 else "ERRO",
         "resumo": f"Margem POT (POT − OVR) validada em {len(squad_list)} atletas e separada da Evolução Real medida contra o baseline_snapshot.json.",
         "regra": "Distingue potencial restante de crescimento real obtido desde o início do acompanhamento do save."
@@ -1444,6 +1540,7 @@ def run_automated_validations(squad_list, matches_catalog, player_match_logs, cl
     checks.append({
         "id": 6,
         "titulo": "Contratos Próximos do Fim (2026) e Multas sem Zero Ambíguo",
+        "status_canonico": "verificado" if ok_6 else "falhou",
         "status": "OK (VERIFICADO)" if ok_6 else "ERRO",
         "resumo": f"Zero ambíguo eliminado ('Sem multa rescisória' / 'Emprestado'). Alertas de último ano (2026): {len(expiring_2026)} atletas sinalizados.",
         "regra": "Nunca trata ausência de multa como € 0 numérico e sinaliza vínculos que expiram ao término da temporada atual."
@@ -1459,6 +1556,7 @@ def run_automated_validations(squad_list, matches_catalog, player_match_logs, cl
     checks.append({
         "id": 7,
         "titulo": "Conciliação Matemática das Tabelas de Classificação",
+        "status_canonico": "verificado" if ok_7 else "falhou",
         "status": "OK (VERIFICADO)" if ok_7 else "ERRO",
         "resumo": f"Validadas {len(club_competitions)} competições do clube: Pontos (V×3+E), Jogos (V+E+D) e Saldo (GP−GC) exatos em 100% dos clubes.",
         "regra": "Recalcula pontos, vitórias, empates, derrotas e saldo de gols e confere com os resultados registrados da equipe."
@@ -1471,6 +1569,7 @@ def run_automated_validations(squad_list, matches_catalog, player_match_logs, cl
     checks.append({
         "id": 8,
         "titulo": "Trava de Amostra Mínima e Independência da Hierarquia Tática",
+        "status_canonico": "verificado" if ok_8 else "falhou",
         "status": "OK (VERIFICADO)" if ok_8 else "ERRO",
         "resumo": f"{len(short_sample_players)} atletas com amostra curta (≤2J ou <150m) classificados como 'Amostra insuficiente — continuar observando' (0 recomendações precipitadas; hierarquia do treinador preservada).",
         "regra": "Exige ≥3 jogos e ≥150 minutos antes de sugerir maior rotação e jamais altera automaticamente o status de escalação definido pelo treinador."
@@ -1482,18 +1581,32 @@ def run_automated_validations(squad_list, matches_catalog, player_match_logs, cl
     checks.append({
         "id": 9,
         "titulo": "Descrições 100% Derivadas dos Campos Numéricos (Zero Textos Manuais)",
+        "status_canonico": "verificado" if ok_9 else "falhou",
         "status": "OK (VERIFICADO)" if ok_9 else "ERRO",
         "resumo": f"Todos os {len(squad_list)} textos descritivos gerados dinamicamente a partir de OVR, POT, Idade e Minutos atuais (0 contradições).",
         "regra": "Impede que descrições textuais antigas contradigam os valores numéricos atualizados."
     })
 
-    verified_count = sum(1 for c in checks if c["status"].startswith("OK"))
-    partial_count = sum(1 for c in checks if c["status"].startswith("PARCIAL"))
+    verified_count = sum(1 for c in checks if c["status_canonico"] == "verificado")
+    partial_count = sum(1 for c in checks if c["status_canonico"] == "parcial")
+    failed_count = sum(1 for c in checks if c["status_canonico"] == "falhou")
+    not_executed_count = sum(1 for c in checks if c["status_canonico"] == "nao_executado")
+    status_geral = "reprovado" if failed_count > 0 else ("aprovado_com_ressalvas" if partial_count > 0 else "aprovado")
+
     return {
+        "status_geral": status_geral,
+        "total_verificados": verified_count,
+        "total_parciais": partial_count,
+        "total_falhas": failed_count,
+        "total_nao_executados": not_executed_count,
+        "total_testes": len(checks),
+        "total_ok": verified_count,
+        "total_parcial": partial_count,
+        "total_falha": failed_count,
         "passed_count": verified_count,
         "partial_count": partial_count,
         "total_checks": len(checks),
-        "summary_badge": f"{verified_count} Verificados · {partial_count} Parcial (N/D no Binário)",
+        "summary_badge": f"{verified_count} Verificados · {partial_count} Parcial (N/D no Binário)" if failed_count == 0 else f"{failed_count} Falhas Detectadas",
         "checks": checks
     }
 
@@ -1855,7 +1968,8 @@ def list_available_saves():
                     seen_names.add(key)
                     found.append({
                         "filename": f,
-                        "path": full_p,
+                        "path": os.path.join("saves", f).replace("\\", "/"),
+                        "_full_path": full_p,
                         "source": "Pasta saves/" if os.path.normpath(d) == os.path.normpath(SAVES_DIR) else (
                             "Pasta Raiz" if os.path.normpath(d) == os.path.normpath(ROOT_DIR) else "EA Sports FC AppData"
                         ),
@@ -1870,14 +1984,30 @@ def find_latest_save():
     saves = list_available_saves()
     if not saves:
         raise FileNotFoundError("Nenhum arquivo de save (CmMgr...) encontrado em saves/ ou AppData.")
-    return saves[0]["path"]
+    return saves[0]["_full_path"]
 
 
-if __name__ == "__main__":
-    latest_save = find_latest_save()
-    print(f"Lendo save: {latest_save}")
-    career_data = parse_save_file(latest_save)
-    career_data["available_saves"] = list_available_saves()
+def sanitize_available_saves_for_export(saves_list):
+    sanitized = []
+    for s in saves_list:
+        clean = copy.deepcopy(s)
+        clean.pop("_full_path", None)
+        sanitized.append(clean)
+    return sanitized
+
+
+def find_save_files():
+    """Retorna a lista de caminhos de arquivos de save disponíveis."""
+    saves = list_available_saves()
+    return [s["_full_path"] for s in saves]
+
+
+def run_full_pipeline(target_save=None):
+    """Executa a extração completa do save e atualiza todos os arquivos JSON, JS, CSV e Excel."""
+    if not target_save:
+        target_save = find_latest_save()
+    career_data = parse_save_file(target_save)
+    career_data["available_saves"] = sanitize_available_saves_for_export(list_available_saves())
 
     json_path = os.path.join(DATA_DIR, "career_data.json")
     with open(json_path, "w", encoding="utf-8") as jf:
@@ -1888,8 +2018,13 @@ if __name__ == "__main__":
         jsf.write("window.FALLBACK_CAREER_DATA = " + json.dumps(career_data, ensure_ascii=False) + ";\n")
 
     csv_p, xlsx_p = export_spreadsheets(career_data, EXPORTS_DIR)
-    print(f"JSON salvo em: {json_path}")
-    print(f"JS Bundle salvo em: {js_path}")
-    print(f"CSV atualizado: {csv_p}")
-    print(f"Excel atualizado: {xlsx_p}")
+    return career_data
+
+
+if __name__ == "__main__":
+    latest_save = find_latest_save()
+    print(f"Lendo save: {latest_save}")
+    career_data = run_full_pipeline(latest_save)
+    print(f"JSON salvo em: {os.path.join(DATA_DIR, 'career_data.json')}")
+    print(f"JS Bundle salvo em: {os.path.join(DATA_DIR, 'career_data.js')}")
     print(f"Auditoria: {career_data['validation_report']['summary_badge']}")

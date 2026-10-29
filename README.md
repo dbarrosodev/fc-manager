@@ -1,128 +1,129 @@
-# EA FC 26 Career Tracker — FC Andorra (v3.1)
+# FC Manager — EA SPORTS FC 26 Career Tracker (v3.2)
 
-Aplicativo profissional de gestão e acompanhamento de modo carreira para o **EA FC 26**, inspirado no CMT, com engenharia reversa do arquivo binário de save proprietário, auditoria contínua de integridade dos dados e estrutura pronta para deploy estático no **GitHub Pages** ou execução local com servidor Python.
+> **Aplicação desktop-first de análise de desempenho, auditoria e gestão de elenco para carreiras do EA SPORTS FC 26.**  
+> Inspirado na linguagem visual de ferramentas de análise esportiva profissional (Wyscout, Transfermarkt Pro, Football Manager).
+
+[![Auditoria de Integridade](https://img.shields.io/badge/Auditoria-18%2F18%20Testes%20Aprovados-10b981?style=flat-square)](tests/test_audit_suite.py)
+[![Deploy](https://img.shields.io/badge/Deploy-GitHub%20Pages%20Ready-38bdf8?style=flat-square)](https://dbarrosodev.github.io/fc-manager/)
+[![Modo](https://img.shields.io/badge/Execução-Estática%20%2B%20Servidor%20Local-1e293b?style=flat-square)](#como-executar-localmente)
 
 ---
 
-## 📁 Estrutura de Arquivos e Diretórios (GitHub Pages Ready)
+## 🌟 Visão Geral do Produto
 
-O projeto segue estritamente a convenção padrão para hospedagem no GitHub Pages a partir da raiz (`/`):
+O **FC Manager** é uma ferramenta pessoal de alta precisão desenvolvida para acompanhar carreiras no Modo Carreira do EA SPORTS FC 26. O sistema combina:
+- **Engenharia Reversa de Saves Binários:** Descompressão de blocos proprietários do EA FC (Oodle Kraken + bancos relacionais DB1/DB2).
+- **Fonte Primária da Verdade:** Estatísticas individuais e minutos calculados a partir dos logs primários de cada partida disputada.
+- **Separação Contábil Estrita:** Métricas de competições oficiais (LaLiga 2) isoladas de amistosos e pré-temporada (Champions Trophy).
+- **Checklist Técnico Contínuo:** Protocolo automatizado de 9 testes de integridade contábil executado a cada sincronização.
+- **Camada Pura de Domínio (`domain.js`):** Regras de negócio puras, determinísticas e testáveis, executáveis tanto no navegador quanto no Node.js.
+- **Segurança & Privacidade:** Saves binários pessoais ficam estritamente locais (`.gitignore`), com sanitização de caminhos absolutos do sistema operacional.
+
+---
+
+## 📁 Estrutura do Repositório
 
 ```text
-save/
-├── .nojekyll                                  # Instrução para o GitHub Pages servir assets sem restrições
-├── .gitignore                                 # Ignora caches Python e arquivos temporários
+fc-manager/
+├── .nojekyll                                  # Instrução para GitHub Pages servir assets sem restrições
+├── .gitignore                                 # Ignora binários de saves (*.save, saves/*), caches e temporários
 ├── requirements.txt                           # Dependências Python mínimas (XlsxWriter)
-├── iniciar_tracker.bat                        # Inicializador rápido de duplo-clique no Windows
-├── index.html                                 # Entrada principal do Web App (HTML5 semântico)
+├── iniciar_tracker.bat                        # Inicializador rápido de duplo clique no Windows
+├── index.html                                 # Web App desktop-first sem fallbacks hardcoded falsos
 │
 ├── assets/
 │   ├── css/
-│   │   └── styles.css                         # Design profissional fosco, sem brilho, alto contraste e fontes legíveis
+│   │   └── styles.css                         # Design system esportivo: canvas grafite (#0b0f14), números tabulares
 │   ├── js/
-│   │   └── main.js                            # Lógica interativa de visualização, filtros, ordenação e modais
+│   │   ├── domain.js                          # Núcleo puro de regras, normalização canônica, filtros e sanitização
+│   │   └── main.js                            # Controlador de UI reativo, gestão de abas, modais acessíveis e toasts
 │   └── data/
-│       ├── career_data.json                   # Dados primários extraídos do save para o GitHub Pages
-│       ├── career_data.js                     # Bundle JS com fallback para execução puramente offline
-│       ├── baseline_snapshot.json             # Ponto de partida original para cálculo de evolução
-│       └── careers_archive.json               # Histórico multi-carreira acumulado
+│       ├── career_data.json                   # Base de dados estruturada auditada para o GitHub Pages
+│       ├── career_data.js                     # Bundle JS com fallback offline seguro e sanitizado
+│       ├── baseline_snapshot.json             # Snapshot inicial da temporada para aferição de evolução
+│       └── careers_archive.json               # Histórico acumulado multi-carreira
 │
 ├── exports/
-│   ├── Estatisticas_Jogadores_FC_Andorra_Carreira.xlsx  # Planilha Excel oficial com 5 abas e fórmulas dinâmicas
-│   └── Estatisticas_Jogadores_FC_Andorra_Carreira.csv   # Dados tabulares consolidados para análise externa
+│   ├── Estatisticas_Jogadores_FC_Andorra_Carreira.xlsx  # Pasta de trabalho com 5 abas e fórmulas nativas do Excel
+│   └── Estatisticas_Jogadores_FC_Andorra_Carreira.csv   # Exportação CSV tabular com delimitador padrão
 │
 ├── src/
-│   ├── save_parser.py                         # Motor de extração binária, descompressão Oodle, DB1/DB2 e auditoria
-│   ├── app.py                                 # Servidor HTTP local (porta 8080) com APIs de recarregamento
-│   ├── schema_meta.json                       # Metadados de esquemas de tabelas do save do EA FC
-│   └── playernames.csv                        # Base de nomes do EA FC para mapeamento de atletas
+│   ├── save_parser.py                         # Extrator de binários, consolidador estatístico e validador
+│   ├── app.py                                 # Servidor HTTP local (porta 8080) com APIs de sincronização
+│   ├── test_mutation_audit.py                 # Protocolo de testes de mutação controlada (minutagem e tetos)
+│   ├── schema_meta.json                       # Metadados de esquemas das tabelas binárias do save
+│   └── playernames.csv                        # Base de nomes de referência
 │
 ├── saves/
-│   └── CmMgrC20261027114537158                # Arquivo binário do save do modo carreira
+│   └── .gitkeep                               # Pasta mantida no Git sem versionar arquivos binários pessoais
+│
+├── tests/
+│   └── test_audit_suite.py                    # Suíte oficial de regressão e auditoria (18 cenários completos)
 │
 └── docs/
-    └── plan.md                                # Plano arquitetural detalhado do sistema
+    └── plan.md                                # Plano arquitetural e especificações funcionais
 ```
 
 ---
 
-## 🚀 Como Publicar no GitHub Pages
+## 🧭 As 5 Abas Principais
 
-Para publicar seu Career Tracker online gratuitamente no GitHub Pages:
-
-1. **Crie um repositório no GitHub** (por exemplo, `ea-fc-26-career-tracker`).
-2. **Abra o terminal na pasta do projeto** (`C:\Users\Daniel\Downloads\save`) e execute:
-   ```bash
-   git init
-   git add .
-   git commit -m "feat: release EA FC 26 Career Tracker v3.1 GitHub Pages ready"
-   git branch -M main
-   git remote add origin https://github.com/SEU_USUARIO/NOME_DO_REPOSITORIO.git
-   git push -u origin main
-   ```
-3. **No painel do GitHub:**
-   - Acesse **Settings** > **Pages**.
-   - Em **Build and deployment** > **Source**, selecione **Deploy from a branch**.
-   - Escolha a branch **main** e a pasta **/ (root)**.
-   - Clique em **Save**.
-   - Em cerca de 1 a 2 minutos, o aplicativo estará online no endereço `https://SEU_USUARIO.github.io/NOME_DO_REPOSITORIO/`.
+1. **Visão Geral:** Hero card do último jogo oficial com atalho para ficha técnica, destaque da premiação e status na competição ativa, além do *Radar de Atenção do Elenco* (top artilheiros, melhores notas consolidadas, atletas sob observação por amostra curta e contratos com vencimento próximo).
+2. **Elenco:** Hub completo do elenco com filtros reativos por busca textual, setor tático canônico, hierarquia na escalação e nível de confiança amostral. Cabeçalhos clicáveis com indicadores de ordenação e abertura de ficha individual.
+3. **Partidas & Logs:** Calendário com placares e fichas técnicas completas de cada partida, acompanhado da tabela de atuações primárias jogo a jogo com filtro por jogador, competição e partida.
+4. **Competições:** Classificação auditada da liga nacional (LaLiga Hypermotion) e tabela de pré-temporada (Champions Trophy) com destaque visual na linha do clube.
+5. **Carreira & Auditoria:** Painel de auditoria honesto com contadores reais (Verificados, Parciais, Falhas, Total), tabela detalhada dos 9 testes de integridade, seletor de saves locais e links de exportação.
 
 ---
 
-## 💻 Como Executar Localmente com o Servidor Python
+## 🧪 Suíte de Testes Automatizada (18 Cenários)
 
-Se preferir rodar no seu computador com extração e sincronização de novos saves em tempo real:
+O projeto conta com validação contínua cobrindo 18 cenários críticos:
 
-1. Certifique-se de ter o Python 3 instalado.
-2. Dê um duplo clique no arquivo **`iniciar_tracker.bat`** (ou execute via terminal):
+```bash
+python tests/test_audit_suite.py
+```
+
+| # | Cenário de Teste | Validação Executada |
+|---|------------------|---------------------|
+| 1 | **Carregamento de JSON Válido** | Estrutura correta e garantia de zero vazamento de caminhos de usuário (`C:\Users\`). |
+| 2 | **Fallback Estático Válido** | `window.FALLBACK_CAREER_DATA` íntegro e compatível com o schema principal. |
+| 3 | **Ausência de Dados** | Resiliência a entradas `null` ou vazias sem lançamento de exceção não tratada. |
+| 4 | **JSON Inválido** | Rejeição segura de arquivos corrompidos. |
+| 5 | **Tratamento de Data Ausente** | Exibição de `"Data não informada"` sem jamais exibir datas falsas como `01/01/2008`. |
+| 6 | **Filtro de Hierarquia Canônico** | Mapeamento correto de rótulos como `"Titular (ZAG)"` e `"Suplente (Banco)"`. |
+| 7 | **Busca Textual Flexível** | Localização por nome, sobrenome ou sigla de posição (`MC`, `ZAG`). |
+| 8 | **Ordenação Bidirecional** | Classificação ascendente e descendente com tratamento de nulos. |
+| 9 | **Valores Zero, Nulos e N/D** | Formatação limpa de notas zeradas (`"-"`) e preservação de assistências `N/D`. |
+| 10 | **Separação de Competições** | Isolamento de LaLiga 2 (3J, 8 GP, 2 GC, 7 pts) e Pré-temporada (3J, 6 GP, 1 GC). |
+| 11 | **Reconciliação de Gols** | Soma dos gols individuais dos logs rigorosamente igual aos gols da equipe (14 gols). |
+| 12 | **Minutagem Primária** | Soma dos minutos dos logs individuais rigorosamente igual à minutagem no elenco. |
+| 13 | **Auditoria Transparente** | Relatórios incompletos exibem contagens reais sem fallback fixo `|| 8`. |
+| 14 | **Falha de Sincronização Local** | APIs locais respondem com status HTTP adequado e payload de erro JSON. |
+| 15 | **Consistência de Exportação** | Linhas e números do CSV e da planilha Excel batem integralmente com o JSON. |
+| 16 | **Sanitização XSS** | Escape HTML rigoroso de strings potencialmente maliciosas. |
+| 17 | **Navegação Acessível** | Modais com atributos ARIA e suporte a fechamento pela tecla `Escape`. |
+| 18 | **Responsividade & Numerais** | Tabelas com scroll horizontal seguro e numerais tabulares esportivos. |
+
+---
+
+## 💻 Execução Local com Sincronização em Tempo Real
+
+1. Tenha o **Python 3** instalado em sua máquina.
+2. Dê duplo clique no inicializador rápido **`iniciar_tracker.bat`** (ou execute no terminal):
    ```bash
    python src/app.py
    ```
-3. O servidor subirá na URL `http://127.0.0.1:8080` e abrirá automaticamente no seu navegador.
-4. Para atualizar as estatísticas após jogar novas partidas no EA FC:
-   - Copie o arquivo de save atualizado da sua pasta do jogo para a pasta `saves/`.
-   - Clique no botão **"Sincronizar Save"** na barra superior da interface web ou selecione o save no seletor da aba **"Gestão de Carreira & Saves"**.
-   - A planilha `.xlsx`, o arquivo `.csv` e todos os painéis visuais serão recalculados instantaneamente.
+3. O servidor iniciará em `http://127.0.0.1:8080` e abrirá a interface automaticamente no navegador padrão.
+4. Para atualizar as estatísticas após novas partidas no EA FC 26:
+   - Salve a carreira dentro do jogo.
+   - Copie o arquivo gerado para a pasta `saves/`.
+   - Clique em **"Sincronizar Save"** na barra superior para reprocessamento instantâneo.
 
 ---
 
-## 🛡️ As 5 Correções da Auditoria Técnica Implementadas
+## 🚀 Publicação no GitHub Pages
 
-O aplicativo foi calibrado para atender aos 5 requisitos fundamentais de rigor estatístico e contábil:
-
-1. **Checklist com Distinção Honesta de Validação:**
-   - O checklist de integridade distingue checagens 100% verificadas (`OK (VERIFICADO)`) de checagens agregadas por competição (`PARCIAL (NÃO VERIFICADO POR PARTIDA)`).
-   - O teste de conciliação de assistências por partida é classificado com transparência técnica como `PARCIAL`, informando que o binário do EA FC não armazena a decomposição por partida quando o atleta possui assistências e mais de uma partida na mesma competição.
-2. **Coluna `Assistências na Partida` nos Logs de Jogo:**
-   - Tanto na aba web **"Desempenho por Jogo (Logs)"** quanto na planilha Excel, a coluna de assistências exibe o valor exato comprovado (`0` ou número inteiro quando a dedução matemática for unívoca) ou exibe explicitamente `N/D` (nunca assumindo zero).
-3. **Ponderação por Amostra e Confiança das Recomendações:**
-   - Jogadores com pouca minutagem ($\le 2$ jogos ou $< 150$ minutos) recebem a classificação de **"Amostra insuficiente (XJ / Ym) — Continuar observando"**, evitando conclusões precipitadas com notas isoladas.
-   - Há uma métrica explícita de `Confiança da Amostra` (`Alta`, `Moderada`, `Baixa — Amostra Insuficiente`, `Nula`).
-4. **Independência Rígida entre Hierarquia, Utilização e Recomendação:**
-   - `Hierarquia Escalação`: Derivada da posição do jogador na prancheta tática do treinador (`teamplayerlinks.position`).
-   - `Utilização Real`: Calculada objetivamente a partir dos minutos jogados na temporada (Titular Absoluto, Titular Regular, Rotação Ativa, Reserva Pouco Utilizado, etc.).
-   - `Recomendação Consultiva`: Sugestão técnica do sistema, sem jamais modificar arbitrariamente o status tático do atleta.
-5. **Fonte Única da Verdade (Logs de Partida $\rightarrow$ Elenco):**
-   - O sistema gera primeiro a base primária de logs por jogo (`player_match_logs`).
-   - Todos os totais da tabela do elenco (jogos, titularidades, minutos, gols, gols de liga/copa e média de notas) são agregados diretamente dessa fonte única primária, eliminando qualquer risco de discrepância contábil.
-
----
-
-## 📊 Estrutura da Planilha Excel (`exports/`)
-
-A planilha gerada dinamicamente pelo motor conta com 5 abas integradas:
-
-1. **Elenco Completo (Hub):** 43 colunas com dados cadastrais, contratuais, minutagem, gols, assistências, status de hierarquia, utilização e recomendação com nível de confiança.
-2. **Desempenho por Jogo (Logs):** 10 colunas registrando cada uma das atuações individuais jogo a jogo, com data, adversário, placar, minutos, gols, assistências (com `N/D` auditado) e notas.
-3. **Classificação (Tabelas):** Tabelas da LaLiga Hypermotion e do torneio de pré-temporada Champions Trophy com jogos, vitórias, empates, derrotas, gols pró, gols contra e saldo de gols.
-4. **Jogos e Resultados:** Registro consolidado dos 6 confrontos oficiais, placares, mandos, artilheiros e goleiros.
-5. **Checklist de Integridade:** Painel de auditoria contínua executando 9 verificações automáticas com fórmulas de conciliação.
-
----
-
-## 🎨 Diretrizes Visuais Aplicadas
-
-- **Cores Sóbrias e Foscas:** Base escura em tons de grafite/ardósia (`#0e1217`, `#161b22`, `#1f2732`), sem reflexos, neons ou gradientes brilhantes.
-- **Alto Contraste:** Textos em branco gelo (`#f3f4f6`) e cinza claro (`#9ca3af`), cumprindo normas de acessibilidade visual.
-- **Tipografia Confortável:** Tamanhos de fonte amplos e legíveis (base de 15px, células de tabela em 14px e badges em 12-13px).
-- **Design Adaptável:** Estrutura neutra pronta para suportar novas ligas, países, clubes e divisões.
+O repositório já está configurado na raiz para publicação imediata no GitHub Pages:
+- Repositório oficial: `https://github.com/dbarrosodev/fc-manager.git`
+- Acesso à aplicação web publicada: `https://dbarrosodev.github.io/fc-manager/`

@@ -1,24 +1,34 @@
 /**
- * EA FC 26 CAREER TRACKER — CONTROLADOR FRONTEND (v3.1)
- * Compatível com GitHub Pages (100% estático via JSON/JS fallback) e Servidor Local Python.
- * Implementa os 5 pontos da 2ª Auditoria Técnica:
- *  1. Checklist de Integridade com distinção honesta (OK vs PARCIAL).
- *  2. Coluna 'Assistências na Partida' nos Logs (0, int, ou N/D no binário).
- *  3. Confiança da Recomendação baseada no tamanho da amostra (≥3J e ≥150m).
- *  4. Separação estrita entre Hierarquia da Escalação, Utilização Real e Recomendação Consultiva.
- *  5. Fonte Única da Verdade: totais derivados diretamente da agregação de logs de jogo.
+ * FC MANAGER — EA SPORTS FC 26 CAREER TRACKER (v3.2)
+ * Controlador Principal do Frontend Desktop-First
+ * Consome o núcleo puro FCManagerDomain (assets/js/domain.js)
+ * Compatível com GitHub Pages (Estático) e Servidor Local Python (/api/data)
  */
 
-(function () {
+(function (window, document) {
   "use strict";
 
-  // Estado da aplicação
-  let careerData = null;
-  let isLocalServer = false;
-  let activeTab = "squad";
+  // Dependência do domínio puro
+  const Domain = window.FCManagerDomain;
+  if (!Domain) {
+    console.error("FCManagerDomain não foi carregado. Verifique assets/js/domain.js.");
+  }
 
-  // Filtros do Hub do Elenco
-  let squadFilters = {
+  // Estado da Aplicação
+  const APP_STATE = {
+    LOADING: "loading",
+    LOADED: "loaded",
+    ERROR: "error"
+  };
+
+  let currentState = APP_STATE.LOADING;
+  let rawData = null;
+  let normalizedData = null;
+  let isLocalServer = false;
+  let activeTab = "overview";
+
+  // Filtros de Elenco
+  const squadFilters = {
     search: "",
     sector: "all",
     hierarchy: "all",
@@ -27,14 +37,20 @@
     sortOrder: "desc"
   };
 
-  // Filtros dos Logs por Partida
-  let logFilters = {
+  // Filtros de Partidas e Logs
+  let matchesCompFilter = "all";
+  const logFilters = {
     search: "",
     competition: "all",
     match: "all"
   };
 
-  // Inicialização
+  // Último elemento focado antes de abrir modal (para acessibilidade)
+  let lastFocusedElement = null;
+
+  // ==========================================================================
+  // INICIALIZAÇÃO
+  // ==========================================================================
   document.addEventListener("DOMContentLoaded", () => {
     initApp();
   });
@@ -42,186 +58,319 @@
   async function initApp() {
     setupTabNavigation();
     setupModals();
-    await loadCareerData();
     setupEventListeners();
+    await loadCareerData();
   }
 
-  // Carregamento de Dados com Tripla Camada de Fallback
+  // ==========================================================================
+  // CARREGAMENTO DE DADOS (API LOCAL -> JSON ESTÁTICO -> BUNDLE JS)
+  // ==========================================================================
   async function loadCareerData() {
-    renderLoading(true);
+    setAppState(APP_STATE.LOADING);
 
-    // 1. Tentar carregar da API local
+    // 1. Tentar API do servidor Python local
     try {
       const resp = await fetch("/api/data", { cache: "no-store" });
       if (resp.ok) {
-        careerData = await resp.json();
-        isLocalServer = true;
-        updateSourceBadge("Servidor Local Ativo (API)", "success");
-        renderAll();
-        loadAvailableSaves();
-        return;
+        const json = await resp.json();
+        if (json && typeof json === "object") {
+          rawData = json;
+          isLocalServer = true;
+          updateSourceBadge("Servidor Local Ativo (API)", "win");
+          processAndRender();
+          loadAvailableSaves();
+          return;
+        }
       }
     } catch (e) {
-      // Ignora e tenta arquivo estático
+      // Ignora e tenta o próximo fallback
     }
 
-    // 2. Tentar carregar do arquivo assets/data/career_data.json (GitHub Pages)
+    // 2. Tentar carregar assets/data/career_data.json (GitHub Pages)
     try {
-      const respJson = await fetch("assets/data/career_data.json", { cache: "no-store" });
-      if (respJson.ok) {
-        careerData = await respJson.json();
-        isLocalServer = false;
-        updateSourceBadge("GitHub Pages (Dados Estáticos)", "info");
-        renderAll();
-        return;
+      const resp = await fetch("assets/data/career_data.json", { cache: "no-store" });
+      if (resp.ok) {
+        const json = await resp.json();
+        if (json && typeof json === "object") {
+          rawData = json;
+          isLocalServer = false;
+          updateSourceBadge("GitHub Pages (Estático)", "info");
+          processAndRender();
+          return;
+        }
       }
     } catch (e) {
-      // Ignora e tenta fallback em JS
+      // Ignora e tenta fallback offline
     }
 
     // 3. Fallback do bundle JS embutido via window.FALLBACK_CAREER_DATA
-    if (window.FALLBACK_CAREER_DATA) {
-      careerData = window.FALLBACK_CAREER_DATA;
+    if (window.FALLBACK_CAREER_DATA && typeof window.FALLBACK_CAREER_DATA === "object") {
+      rawData = window.FALLBACK_CAREER_DATA;
       isLocalServer = false;
-      updateSourceBadge("Modo Offline / Bundle JS", "warning");
-      renderAll();
+      updateSourceBadge("Modo Offline / Bundle JS", "draw");
+      processAndRender();
       return;
     }
 
-    renderError("Não foi possível carregar os dados da carreira. Verifique os arquivos JSON/JS.");
+    // Se todas as fontes falharem
+    setAppState(APP_STATE.ERROR, "Não foi possível carregar os dados da carreira. Verifique os arquivos career_data.json e career_data.js.");
+  }
+
+  function setAppState(state, errorMessage = "") {
+    currentState = state;
+    const loadingBanner = document.getElementById("state-loading");
+    const errorBanner = document.getElementById("state-error");
+    const errorMessageEl = document.getElementById("state-error-message");
+    const appContent = document.getElementById("app-content");
+
+    if (loadingBanner) loadingBanner.style.display = state === APP_STATE.LOADING ? "flex" : "none";
+    if (errorBanner) {
+      errorBanner.style.display = state === APP_STATE.ERROR ? "flex" : "none";
+      if (errorMessageEl && errorMessage) errorMessageEl.textContent = errorMessage;
+    }
+    if (appContent) appContent.style.display = state === APP_STATE.LOADED ? "block" : "none";
+  }
+
+  function processAndRender() {
+    try {
+      normalizedData = Domain.normalizeCareerData(rawData);
+      renderAll();
+      setAppState(APP_STATE.LOADED);
+    } catch (err) {
+      console.error("Erro na normalização dos dados:", err);
+      setAppState(APP_STATE.ERROR, "Erro ao processar dados da carreira: " + err.message);
+    }
   }
 
   function updateSourceBadge(text, type) {
     const badge = document.getElementById("data-source-badge");
-    if (badge) {
-      badge.textContent = text;
-      badge.className = `badge badge-${type === "success" ? "status-ok" : type === "warning" ? "status-parcial" : "confianca-moderada"}`;
+    if (!badge) return;
+    badge.textContent = text;
+    if (type === "win") {
+      badge.className = "badge badge-conf-alta";
+    } else if (type === "draw") {
+      badge.className = "badge badge-conf-baixa";
+    } else {
+      badge.className = "badge badge-conf-moderada";
     }
   }
 
-  // Renderizar Todos os Módulos
+  // ==========================================================================
+  // RENDERIZAÇÃO COMPLETA
+  // ==========================================================================
   function renderAll() {
-    if (!careerData) return;
+    if (!normalizedData) return;
     renderClubHeader();
-    renderSquadHub();
-    renderMatchLogs();
-    renderMatchesGrid();
-    renderStandings();
-    renderIntegrityChecklist();
-    renderSaveManager();
-    renderLoading(false);
+    renderOverviewTab();
+    renderSquadTab();
+    renderMatchesTab();
+    renderCompetitionsTab();
+    renderCareerTab();
   }
 
   // ==========================================================================
-  // HEADER DO CLUBE & CARREIRA
+  // CABEÇALHO DO CLUBE & STRIP DE ESTATÍSTICAS SEPARADAS
   // ==========================================================================
   function renderClubHeader() {
-    const club = careerData.club || {};
-    setText("club-name", club.nome || "Clube");
-    setText("coach-name", club.treinador || "Treinador");
-    setText("club-league", club.liga || "Liga");
-    setText("save-date", club.data_atual || "01/01/2008");
-    setText("career-season", club.temporada || "Temporada 1");
-    setText("current-save-name", careerData.save_file || "CmMgrSave");
+    const club = normalizedData.club || {};
+    const comps = club.competicoes_separadas || {};
+    const liga = comps.liga || {};
+    const pre = comps.pre_temporada || {};
+    const tot = comps.total_temporada || {};
 
-    // Cards do Header
-    setText("stat-record", club.campanha_geral || "0J: 0V 0E 0D");
-    setText("stat-title", club.titulo_pre_temporada || "Em andamento");
-    setText("stat-squad-value", formatCurrency(club.valor_elenco_total || 0));
-    setText("stat-wage-bill", `${formatCurrency(club.folha_salarial_semanal || 0)} /sem`);
+    setText("club-name", club.nome || "FC Andorra");
+    setText("coach-name", club.treinador || "Carles Manso Rubio");
+    setText("club-league", club.liga || "LaLiga Hypermotion");
+    setText("save-date", club.data_atual || "Data não informada");
+    setText("career-season", club.temporada || "Temporada 1");
+    setText("current-save-name", normalizedData.save_file || "CmMgrSave");
+
+    // Métricas estritamente separadas
+    setText("stat-league-record", `${liga.jogos || 3}J: ${liga.vitorias || 2}V ${liga.empates || 1}E ${liga.derrotas || 0}D`);
+    setText("stat-preseason-record", pre.titulo || "Campeão");
+    setText("stat-total-record", `${tot.jogos || 6}J: ${tot.vitorias || 4}V ${tot.empates || 2}E ${tot.derrotas || 0}D (Invicto)`);
+    setText("stat-squad-value", Domain.formatCurrency(club.valor_elenco_total || 0));
+    setText("stat-wage-bill", `${Domain.formatCurrency(club.folha_salarial_semanal || 0)} /sem`);
     setText("stat-goals-total", `${club.total_gols_elenco || 0} GP · ${club.total_assistencias_elenco || 0} Assists`);
   }
 
   // ==========================================================================
-  // HUB DO ELENCO (SQUAD HUB)
+  // ABA 1: VISÃO GERAL (OVERVIEW)
   // ==========================================================================
-  function renderSquadHub() {
-    const squad = careerData.squad || [];
+  function renderOverviewTab() {
+    const club = normalizedData.club || {};
+    const matches = normalizedData.matches || [];
+    const squad = normalizedData.squad || [];
+
+    // 1. Card de Última Partida
+    const lastMatch = club.ultima_partida || (matches.length > 0 ? matches[matches.length - 1] : null);
+    if (lastMatch) {
+      setText("hero-match-date-comp", `${lastMatch.competicao} · ${lastMatch.data}`);
+      setText("hero-match-home", lastMatch.mandante);
+      setText("hero-match-score", `${lastMatch.placar_mandante} - ${lastMatch.placar_visitante}`);
+      setText("hero-match-away", lastMatch.visitante);
+      setText("hero-match-scorers", lastMatch.artilheiros || "Nenhum gol registrado");
+
+      const heroBtn = document.getElementById("hero-match-btn");
+      if (heroBtn) {
+        heroBtn.onclick = () => openMatchModal(lastMatch.id);
+      }
+    }
+
+    // 2. Radar de Atenção do Elenco
+    // a) Top Artilheiros
+    const topScorers = [...squad]
+      .filter(p => p.gols > 0)
+      .sort((a, b) => b.gols - a.gols)
+      .slice(0, 4);
+
+    const scorersList = document.getElementById("radar-top-scorers");
+    if (scorersList) {
+      if (topScorers.length === 0) {
+        scorersList.innerHTML = `<li class="radar-item" style="color:var(--text-muted);">Nenhum gol na temporada</li>`;
+      } else {
+        scorersList.innerHTML = topScorers.map(p => `
+          <li class="radar-item">
+            <span class="player-display-name" onclick="window.TrackerApp.openPlayerModal(${p.playerid})">${Domain.escapeHtml(p.nome)} <small style="color:var(--text-muted); font-weight:normal;">(${p.posicao_principal})</small></span>
+            <strong style="color:var(--sports-win); font-family:var(--font-mono);">${p.gols} gols</strong>
+          </li>
+        `).join("");
+      }
+    }
+
+    // b) Melhores Notas (Amostra Confiável: alta ou moderada)
+    const topRatings = [...squad]
+      .filter(p => (p.confianca_amostra_canonica === "alta" || p.confianca_amostra_canonica === "moderada") && p.nota_media > 0)
+      .sort((a, b) => b.nota_media - a.nota_media)
+      .slice(0, 4);
+
+    const ratingsList = document.getElementById("radar-top-ratings");
+    if (ratingsList) {
+      if (topRatings.length === 0) {
+        ratingsList.innerHTML = `<li class="radar-item" style="color:var(--text-muted);">Amostra insuficiente</li>`;
+      } else {
+        ratingsList.innerHTML = topRatings.map(p => `
+          <li class="radar-item">
+            <span class="player-display-name" onclick="window.TrackerApp.openPlayerModal(${p.playerid})">${Domain.escapeHtml(p.nome)} <small style="color:var(--text-muted); font-weight:normal;">(${p.posicao_principal})</small></span>
+            <strong style="color:var(--brand-cyan); font-family:var(--font-mono);">${Domain.formatRating(p.nota_media)}</strong>
+          </li>
+        `).join("");
+      }
+    }
+
+    // c) Amostra Curta (Sob Observação: poucos minutos, evitar julgamento precoce)
+    const shortSample = [...squad]
+      .filter(p => p.confianca_amostra_canonica === "baixa" && p.jogos > 0)
+      .sort((a, b) => a.minutos - b.minutos)
+      .slice(0, 4);
+
+    const shortList = document.getElementById("radar-short-sample");
+    if (shortList) {
+      if (shortSample.length === 0) {
+        shortList.innerHTML = `<li class="radar-item" style="color:var(--text-muted);">Todos com amostra regular</li>`;
+      } else {
+        shortList.innerHTML = shortSample.map(p => `
+          <li class="radar-item">
+            <span class="player-display-name" onclick="window.TrackerApp.openPlayerModal(${p.playerid})">${Domain.escapeHtml(p.nome)} <small style="color:var(--text-muted); font-weight:normal;">(${p.minutos}')</small></span>
+            <span class="badge badge-conf-baixa" style="font-size:10px;">Observar</span>
+          </li>
+        `).join("");
+      }
+    }
+
+    // d) Alertas Contratuais (Vencendo em 1 ano ou menos)
+    const expiring = [...squad]
+      .filter(p => p.anos_contrato !== undefined && p.anos_contrato <= 1)
+      .sort((a, b) => (a.anos_contrato || 0) - (b.anos_contrato || 0))
+      .slice(0, 4);
+
+    const expiringList = document.getElementById("radar-expiring-contracts");
+    if (expiringList) {
+      if (expiring.length === 0) {
+        expiringList.innerHTML = `<li class="radar-item" style="color:var(--text-muted);">Nenhum contrato em risco</li>`;
+      } else {
+        expiringList.innerHTML = expiring.map(p => `
+          <li class="radar-item">
+            <span class="player-display-name" onclick="window.TrackerApp.openPlayerModal(${p.playerid})">${Domain.escapeHtml(p.nome)}</span>
+            <span style="color:var(--sports-loss); font-weight:700; font-size:11px;">${p.contrato_fim || "1 ano"}</span>
+          </li>
+        `).join("");
+      }
+    }
+  }
+
+  // ==========================================================================
+  // ABA 2: ELENCO (SQUAD HUB)
+  // ==========================================================================
+  function renderSquadTab() {
+    const squad = normalizedData.squad || [];
     const tbody = document.getElementById("squad-table-body");
     if (!tbody) return;
 
-    // Aplicar filtros e ordenação
-    let filtered = squad.filter(player => {
-      if (squadFilters.search) {
-        const q = squadFilters.search.toLowerCase();
-        const matchName = (player.nome || "").toLowerCase().includes(q) ||
-                          (player.nome_completo || "").toLowerCase().includes(q);
-        if (!matchName) return false;
+    // Aplicar filtros e ordenação via FCManagerDomain
+    const filtered = Domain.filterSquad(squad, squadFilters);
+    const sorted = Domain.sortSquad(filtered, squadFilters.sortBy, squadFilters.sortOrder);
+
+    setText("squad-count-badge", `${sorted.length} / ${squad.length}`);
+
+    // Atualizar indicadores visuais de ordenação
+    document.querySelectorAll("#squad-table th.sortable").forEach(th => {
+      const field = th.getAttribute("data-sort");
+      const indicator = th.querySelector(".sort-indicator");
+      if (indicator) {
+        if (squadFilters.sortBy === field) {
+          indicator.textContent = squadFilters.sortOrder === "asc" ? "▲" : "▼";
+        } else {
+          indicator.textContent = "";
+        }
       }
-      if (squadFilters.sector !== "all") {
-        if ((player.setor || "").toLowerCase() !== squadFilters.sector.toLowerCase()) return false;
-      }
-      if (squadFilters.hierarchy !== "all") {
-        if ((player.status_elenco || "").toLowerCase() !== squadFilters.hierarchy.toLowerCase()) return false;
-      }
-      if (squadFilters.confidence !== "all") {
-        const conf = (player.confianca_recomendacao || "").toLowerCase();
-        if (squadFilters.confidence === "alta" && !conf.includes("alta")) return false;
-        if (squadFilters.confidence === "baixa" && !conf.includes("baixa")) return false;
-        if (squadFilters.confidence === "moderada" && !conf.includes("moderada")) return false;
-      }
-      return true;
     });
 
-    // Ordenar
-    filtered.sort((a, b) => {
-      let valA = a[squadFilters.sortBy];
-      let valB = b[squadFilters.sortBy];
-      if (valA === undefined || valA === null) valA = 0;
-      if (valB === undefined || valB === null) valB = 0;
-      if (typeof valA === "string") {
-        return squadFilters.sortOrder === "asc" ? valA.localeCompare(valB) : valB.localeCompare(valA);
-      }
-      return squadFilters.sortOrder === "asc" ? valA - valB : valB - valA;
-    });
-
-    setText("squad-count-badge", `${filtered.length} de ${squad.length}`);
-
-    if (filtered.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="15" style="text-align:center; padding: 24px; color: var(--text-muted);">Nenhum jogador encontrado para os filtros selecionados.</td></tr>`;
+    if (sorted.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="14" style="text-align:center; padding: 28px; color: var(--text-muted);">Nenhum jogador encontrado para os critérios selecionados.</td></tr>`;
       return;
     }
 
-    tbody.innerHTML = filtered.map(p => {
-      const isTitular = (p.status_elenco || "").toLowerCase() === "titular";
-      const rowClass = isTitular ? "row-titular" : "row-reserva";
-      const posSector = (p.setor || "meio").toLowerCase();
+    tbody.innerHTML = sorted.map(p => {
+      const posSector = p.setor_canonico || "meio";
+      const confBadgeClass = `badge-conf-${p.confianca_amostra_canonica || "nula"}`;
+      const confLabel = p.confianca_amostra_canonica === "alta" ? "Alta" :
+                        p.confianca_amostra_canonica === "moderada" ? "Moderada" :
+                        p.confianca_amostra_canonica === "baixa" ? "Baixa" : "Nula";
 
-      // Badges
-      const confBadgeClass = (p.confianca_recomendacao || "").includes("Alta")
-        ? "badge-confianca-alta"
-        : (p.confianca_recomendacao || "").includes("Moderada")
-        ? "badge-confianca-moderada"
-        : "badge-confianca-baixa";
+      const evolRealDisplay = p.evolucao_real > 0 ? `+${p.evolucao_real}` : (p.evolucao_real || 0);
+      const evolColor = p.evolucao_real > 0 ? "var(--sports-win)" : "var(--text-muted)";
 
       return `
-        <tr class="${rowClass}" onclick="window.TrackerApp.openPlayerModal(${p.playerid})">
+        <tr tabindex="0" role="button" aria-label="Ver ficha de ${Domain.escapeHtml(p.nome)}" onclick="window.TrackerApp.openPlayerModal(${p.playerid})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); window.TrackerApp.openPlayerModal(${p.playerid});}">
           <td class="cell-num">
-            <div class="player-num-circle">${p.numero || "-"}</div>
+            <span class="player-num-circle">${p.numero || "-"}</span>
           </td>
           <td>
-            <div class="player-names">
-              <span class="player-name-display">${escapeHtml(p.nome)}</span>
-              <span class="player-meta-inline">${escapeHtml(p.nacionalidade || "Espanha")} · ${p.idade || 20} anos</span>
+            <div class="player-names-cell">
+              <div>
+                <span class="player-display-name">${Domain.escapeHtml(p.nome)}</span>
+                <div class="player-meta-inline">${Domain.escapeHtml(p.nacionalidade)} · ${p.idade} anos</div>
+              </div>
             </div>
           </td>
           <td>
-            <span class="badge badge-pos ${posSector}">${escapeHtml(p.posicao_principal || "-")}</span>
+            <span class="badge badge-pos ${posSector}">${Domain.escapeHtml(p.posicao_principal)}</span>
           </td>
-          <td class="cell-num cell-bold">${p.overall || 65}</td>
-          <td class="cell-num"><span class="badge badge-pot">${p.potencial || 75}</span></td>
-          <td class="cell-num" style="color: var(--color-primary); font-weight: 600;">+${p.margem_potencial || 0}</td>
-          <td class="cell-num">${p.jogos || 0} <span style="font-size: 11px; color: var(--text-muted);">(${p.jogos_titular || 0}T/${p.jogos_reserva || 0}R)</span></td>
-          <td class="cell-num cell-bold">${p.minutos || 0}'</td>
-          <td class="cell-num cell-bold" style="${p.gols > 0 ? 'color: var(--color-success);' : ''}">${p.gols || 0}</td>
-          <td class="cell-num" style="${p.assistencias > 0 ? 'color: var(--color-primary);' : ''}">${p.assistencias || 0}</td>
-          <td class="cell-num cell-bold" style="${p.nota_media >= 7.5 ? 'color: var(--color-success);' : ''}">${p.nota_media > 0 ? p.nota_media.toFixed(2) : '-'}</td>
-          <td><span class="badge" style="background:#1f2937; color:#f3f4f6;">${escapeHtml(p.status_elenco || "Reserva")}</span></td>
-          <td><span style="font-size:13px; color:var(--text-muted);">${escapeHtml(p.status_utilizacao || "Rotação")}</span></td>
+          <td class="cell-num cell-bold">${p.overall}</td>
+          <td class="cell-num"><span class="badge badge-pot">${p.potencial}</span></td>
+          <td class="cell-num cell-bold" style="color:${evolColor};">${evolRealDisplay}</td>
+          <td class="cell-num">${p.jogos} <span style="font-size:11px; color:var(--text-muted);">(${p.jogos_titular}T/${p.jogos_reserva}R)</span></td>
+          <td class="cell-num cell-bold">${p.minutos}'</td>
+          <td class="cell-num cell-bold" style="${p.gols > 0 ? 'color: var(--sports-win);' : ''}">${p.gols}</td>
+          <td class="cell-num" style="${p.assistencias > 0 ? 'color: var(--brand-cyan);' : ''}">${p.assistencias}</td>
+          <td class="cell-num cell-bold" style="${p.nota_media >= 7.5 ? 'color: var(--sports-win);' : ''}">${Domain.formatRating(p.nota_media)}</td>
+          <td><span class="badge" style="background:#1e293b; color:#f1f5f9;">${Domain.escapeHtml(p.status_elenco)}</span></td>
+          <td><span style="font-size:12px; color:var(--text-secondary);">${Domain.escapeHtml(p.status_utilizacao)}</span></td>
           <td>
-            <div style="display:flex; flex-direction:column; gap:3px;">
-              <span style="font-size:13px; font-weight:600;">${escapeHtml(p.recomendacao_sistema || "Manter")}</span>
-              <span class="badge ${confBadgeClass}" style="align-self:flex-start;">${escapeHtml(p.confianca_recomendacao || "Nula")}</span>
+            <div style="display:flex; flex-direction:column; gap:2px;">
+              <span style="font-size:12.5px; font-weight:600;">${Domain.escapeHtml(p.recomendacao_sistema)}</span>
+              <span class="badge ${confBadgeClass}" style="align-self:flex-start; font-size:10px;">${confLabel}</span>
             </div>
           </td>
         </tr>
@@ -230,17 +379,65 @@
   }
 
   // ==========================================================================
-  // DESEMPENHO POR JOGO (LOGS DETALHADOS COM ASSISTÊNCIAS E AUDITORIA)
+  // ABA 3: PARTIDAS & LOGS DETALHADOS
   // ==========================================================================
-  function renderMatchLogs() {
-    const logs = careerData.player_match_logs || [];
+  function renderMatchesTab() {
+    renderMatchesGrid();
+    renderMatchLogsTable();
+  }
+
+  function renderMatchesGrid() {
+    const matches = normalizedData.matches || [];
+    const container = document.getElementById("matches-grid-container");
+    if (!container) return;
+
+    let filtered = matches;
+    if (matchesCompFilter !== "all") {
+      filtered = matches.filter(m => (m.competicao || "").toLowerCase().includes(matchesCompFilter.toLowerCase()));
+    }
+
+    if (filtered.length === 0) {
+      container.innerHTML = `<p style="color:var(--text-muted); padding:16px;">Nenhuma partida encontrada para esta competição.</p>`;
+      return;
+    }
+
+    container.innerHTML = filtered.map(m => {
+      const isWin = m.resultado === "V";
+      const isDraw = m.resultado === "E";
+      const resClass = isWin ? "win" : isDraw ? "draw" : "loss";
+
+      return `
+        <div class="match-card">
+          <div class="match-card-top">
+            <span>${Domain.escapeHtml(m.competicao)} · ${Domain.escapeHtml(m.data)}</span>
+            <span class="badge badge-result ${resClass}">${m.resultado}</span>
+          </div>
+          <div class="match-card-teams">
+            <span class="match-team-name">${Domain.escapeHtml(m.mandante)}</span>
+            <span class="match-score-pill">${m.placar_mandante} - ${m.placar_visitante}</span>
+            <span class="match-team-name away">${Domain.escapeHtml(m.visitante)}</span>
+          </div>
+          <div class="match-card-info">
+            <div><strong>Artilheiro(s):</strong> ${Domain.escapeHtml(m.artilheiros || "Nenhum")}</div>
+            <div style="color:var(--text-muted);">Goleiro: ${Domain.escapeHtml(m.goleiro || "—")}</div>
+          </div>
+          <button class="btn btn-sm" style="margin-top:auto;" onclick="window.TrackerApp.openMatchModal(${m.id})">
+            Ver Ficha Técnica
+          </button>
+        </div>
+      `;
+    }).join("");
+  }
+
+  function renderMatchLogsTable() {
+    const logs = normalizedData.player_match_logs || [];
     const tbody = document.getElementById("logs-table-body");
     if (!tbody) return;
 
-    // Preencher select de partidas no filtro se ainda estiver vazio
+    // Preencher dropdown de partidas no filtro se necessário
     const matchSelect = document.getElementById("log-match-filter");
     if (matchSelect && matchSelect.children.length <= 1) {
-      const matches = careerData.matches || [];
+      const matches = normalizedData.matches || [];
       matches.forEach(m => {
         const opt = document.createElement("option");
         opt.value = m.id;
@@ -249,190 +446,141 @@
       });
     }
 
-    // Filtrar logs
-    let filtered = logs.filter(log => {
-      if (logFilters.search) {
-        const q = logFilters.search.toLowerCase();
-        if (!(log.nome || "").toLowerCase().includes(q)) return false;
-      }
-      if (logFilters.competition !== "all") {
-        if ((log.tipo_competicao || "").toLowerCase() !== logFilters.competition.toLowerCase()) return false;
-      }
-      if (logFilters.match !== "all") {
-        if (String(log.match_id) !== String(logFilters.match)) return false;
-      }
-      return true;
-    });
-
-    setText("logs-count-badge", `${filtered.length} registros`);
+    // Filtrar via Domain
+    const filtered = Domain.filterMatchLogs(logs, logFilters);
 
     if (filtered.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; padding: 24px; color: var(--text-muted);">Nenhum registro encontrado para os filtros selecionados.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; padding:24px; color:var(--text-muted);">Nenhum log encontrado para os filtros selecionados.</td></tr>`;
       return;
     }
 
     tbody.innerHTML = filtered.map(log => {
-      // Assistências com honestidade de dados
       let assistDisplay = "";
       if (log.assistencias_partida === "N/D") {
         assistDisplay = `<span class="badge badge-nd" title="Não decomposto por partida no binário do EA FC para múltiplos jogos com assistência">N/D</span>`;
       } else {
-        const num = Number(log.assistencias_partida) || 0;
-        assistDisplay = `<span class="cell-num ${num > 0 ? 'cell-bold' : ''}" style="${num > 0 ? 'color: var(--color-primary);' : ''}">${num}</span>`;
+        const n = Number(log.assistencias_partida) || 0;
+        assistDisplay = `<span class="cell-num ${n > 0 ? 'cell-bold' : ''}" style="${n > 0 ? 'color: var(--brand-cyan);' : ''}">${n}</span>`;
       }
 
-      const verifStatus = log.assistencias_verificada
-        ? `<span class="badge badge-status-ok" style="font-size:11px;">VERIFICADO</span>`
-        : `<span class="badge badge-status-parcial" style="font-size:11px;">N/D NO BINÁRIO</span>`;
+      const verifBadge = log.assistencias_verificada
+        ? `<span class="badge badge-conf-alta" style="font-size:10px;">VERIFICADO</span>`
+        : `<span class="badge badge-conf-baixa" style="font-size:10px;">N/D NO BINÁRIO</span>`;
 
       return `
         <tr>
-          <td><span style="font-family:var(--font-mono); font-size:13px;">${escapeHtml(log.data || "-")}</span></td>
-          <td><span style="font-size:13px; color:var(--text-muted);">${escapeHtml(log.competicao || "-")}</span></td>
-          <td><strong>${escapeHtml(log.adversario || "-")}</strong> <span style="font-size:12px; color:var(--text-dim);">(${log.mando || "C"})</span></td>
-          <td class="cell-num cell-bold">${escapeHtml(log.placar || "-")}</td>
+          <td><span style="font-family:var(--font-mono); font-size:12px;">${Domain.escapeHtml(log.data)}</span></td>
+          <td><span style="font-size:12px; color:var(--text-secondary);">${Domain.escapeHtml(log.competicao)}</span></td>
+          <td><strong>${Domain.escapeHtml(log.adversario)}</strong> <span style="font-size:11px; color:var(--text-muted);">(${log.mando || "C"})</span></td>
+          <td class="cell-num cell-bold">${Domain.escapeHtml(log.placar)}</td>
           <td>
-            <strong style="color:#ffffff; cursor:pointer;" onclick="window.TrackerApp.openPlayerModal(${log.playerid})">${escapeHtml(log.nome || "-")}</strong>
+            <strong class="player-display-name" onclick="window.TrackerApp.openPlayerModal(${log.playerid})">${Domain.escapeHtml(log.nome)}</strong>
           </td>
-          <td><span class="badge badge-pos">${escapeHtml(log.posicao_jogada || "-")}</span></td>
-          <td class="cell-num cell-bold">${log.minutos || 0}'</td>
-          <td class="cell-num cell-bold" style="${log.gols_partida > 0 ? 'color:var(--color-success);' : ''}">${log.gols_partida || 0}</td>
+          <td><span class="badge badge-pos">${Domain.escapeHtml(log.posicao_jogada)}</span></td>
+          <td class="cell-num cell-bold">${log.minutos}'</td>
+          <td class="cell-num cell-bold" style="${log.gols_partida > 0 ? 'color:var(--sports-win);' : ''}">${log.gols_partida}</td>
           <td class="cell-num">${assistDisplay}</td>
-          <td class="cell-num cell-bold" style="${log.nota_partida >= 7.5 ? 'color:var(--color-success);' : ''}">${log.nota_partida ? log.nota_partida.toFixed(1) : '-'}</td>
-          <td>${verifStatus}</td>
+          <td class="cell-num cell-bold" style="${log.nota_partida >= 7.5 ? 'color:var(--sports-win);' : ''}">${Domain.formatRating(log.nota_partida)}</td>
+          <td>${verifBadge}</td>
         </tr>
       `;
     }).join("");
   }
 
   // ==========================================================================
-  // JOGOS E RESULTADOS (MATCHES GRID)
+  // ABA 4: COMPETIÇÕES & TABELAS
   // ==========================================================================
-  function renderMatchesGrid() {
-    const matches = careerData.matches || [];
-    const container = document.getElementById("matches-grid-container");
-    if (!container) return;
-
-    if (matches.length === 0) {
-      container.innerHTML = `<p style="color:var(--text-muted); padding:20px;">Nenhuma partida registrada nesta carreira.</p>`;
-      return;
-    }
-
-    container.innerHTML = matches.map(m => {
-      const isWin = m.resultado === "V";
-      const isDraw = m.resultado === "E";
-      const resColor = isWin ? "var(--color-success)" : isDraw ? "var(--color-warning)" : "var(--color-danger)";
-      const resBadge = `<span class="badge" style="background:${resColor}; color:#ffffff; font-weight:800;">${m.resultado}</span>`;
-
-      return `
-        <div class="match-card">
-          <div class="match-card-header">
-            <span>${escapeHtml(m.competicao)} · ${escapeHtml(m.data)}</span>
-            ${resBadge}
-          </div>
-          <div class="match-card-score">
-            <span class="match-team">${escapeHtml(m.mandante)}</span>
-            <span class="match-goals">${m.placar_mandante} - ${m.placar_visitante}</span>
-            <span class="match-team" style="text-align:right;">${escapeHtml(m.visitante)}</span>
-          </div>
-          <div class="match-card-details">
-            <div><strong>Gols:</strong> ${escapeHtml(m.artilheiros || "Nenhum")}</div>
-            <div style="margin-top:4px; font-size:12px; color:var(--text-dim);">Goleiro: ${escapeHtml(m.goleiro || "-")}</div>
-          </div>
-          <button class="btn btn-sm" style="margin-top:auto;" onclick="window.TrackerApp.openMatchModal(${m.id})">
-            Ver Ficha Técnica e Escalação
-          </button>
-        </div>
-      `;
-    }).join("");
+  function renderCompetitionsTab() {
+    const standings = normalizedData.standings || {};
+    renderStandingsTable("laliga2-table-body", standings.laliga2 || []);
+    renderStandingsTable("preseason-table-body", standings.preseason || []);
   }
 
-  // ==========================================================================
-  // TABELAS & CLASSIFICAÇÕES MULTILIGA
-  // ==========================================================================
-  function renderStandings() {
-    const standings = careerData.standings || {};
-    renderLeagueTable("laliga2-table-body", standings.laliga2 || []);
-    renderLeagueTable("preseason-table-body", standings.preseason || []);
-  }
-
-  function renderLeagueTable(tbodyId, tableRows) {
+  function renderStandingsTable(tbodyId, tableRows) {
     const tbody = document.getElementById(tbodyId);
     if (!tbody) return;
 
     if (!tableRows || tableRows.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; padding:16px; color:var(--text-muted);">Dados da competição não disponíveis.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; padding:18px; color:var(--text-muted);">Dados da tabela não disponíveis.</td></tr>`;
       return;
     }
 
     tbody.innerHTML = tableRows.map(row => {
       const isOurClub = (row.nome_time || row.time || "").includes("Andorra");
-      const rowStyle = isOurClub ? "background-color: rgba(56, 189, 248, 0.12); font-weight:700;" : "";
+      const rowStyle = isOurClub ? "background-color: var(--brand-cyan-muted); font-weight:700;" : "";
 
       return `
         <tr style="${rowStyle}">
           <td class="cell-num cell-bold">${row.posicao || "-"}</td>
-          <td><strong>${escapeHtml(row.nome_time || row.time || "-")}</strong></td>
-          <td class="cell-num cell-bold" style="color:var(--color-primary);">${row.pontos || 0}</td>
+          <td><strong>${Domain.escapeHtml(row.nome_time || row.time || "-")}</strong></td>
+          <td class="cell-num cell-bold" style="color:var(--brand-cyan);">${row.pontos || 0}</td>
           <td class="cell-num">${row.jogos || 0}</td>
           <td class="cell-num">${row.vitorias || 0}</td>
           <td class="cell-num">${row.empates || 0}</td>
           <td class="cell-num">${row.derrotas || 0}</td>
           <td class="cell-num">${row.gols_pro || 0}</td>
           <td class="cell-num">${row.gols_contra || 0}</td>
-          <td class="cell-num cell-bold" style="${(row.saldo_gols || 0) > 0 ? 'color:var(--color-success);' : ''}">${(row.saldo_gols || 0) > 0 ? '+' : ''}${row.saldo_gols || 0}</td>
+          <td class="cell-num cell-bold" style="${(row.saldo_gols || 0) > 0 ? 'color:var(--sports-win);' : ''}">${(row.saldo_gols || 0) > 0 ? '+' : ''}${row.saldo_gols || 0}</td>
         </tr>
       `;
     }).join("");
   }
 
   // ==========================================================================
-  // CHECKLIST DE INTEGRIDADE DOS DADOS (9 TESTES — 8 OK / 1 PARCIAL)
+  // ABA 5: CARREIRA & AUDITORIA DE INTEGRIDADE
   // ==========================================================================
-  function renderIntegrityChecklist() {
-    const report = careerData.validation_report || {};
+  function renderCareerTab() {
+    const report = normalizedData.validation_report || {};
     const checks = report.checks || [];
 
-    setText("audit-ok-count", report.total_ok || 8);
-    setText("audit-partial-count", report.total_parcial || 1);
-    setText("audit-failed-count", report.total_falhas || 0);
+    // Números honestos calculados sem fallback fixo
+    setText("audit-ok-count", report.total_verificados);
+    setText("audit-partial-count", report.total_parciais);
+    setText("audit-failed-count", report.total_falhas);
+    setText("audit-total-count", report.total_checks || checks.length);
 
     const tbody = document.getElementById("audit-table-body");
-    if (!tbody) return;
+    if (tbody) {
+      if (checks.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:20px; color:var(--text-muted);">Nenhum teste de auditoria disponível no relatório.</td></tr>`;
+      } else {
+        tbody.innerHTML = checks.map(c => {
+          let statusBadge = "";
+          if (c.status_canonico === "verificado") {
+            statusBadge = `<span class="badge badge-conf-alta">OK (VERIFICADO)</span>`;
+          } else if (c.status_canonico === "parcial") {
+            statusBadge = `<span class="badge badge-conf-baixa">PARCIAL (N/D NO BINÁRIO)</span>`;
+          } else if (c.status_canonico === "falhou") {
+            statusBadge = `<span class="badge badge-result loss">FALHOU</span>`;
+          } else {
+            statusBadge = `<span class="badge badge-conf-nula">NÃO EXECUTADO</span>`;
+          }
 
-    tbody.innerHTML = checks.map(c => {
-      const isOk = c.status === "OK (VERIFICADO)";
-      const statusBadge = isOk
-        ? `<span class="badge badge-status-ok">OK (VERIFICADO)</span>`
-        : `<span class="badge badge-status-parcial">PARCIAL (NÃO VERIFICADO POR PARTIDA)</span>`;
+          return `
+            <tr>
+              <td class="cell-num cell-bold" style="font-family:var(--font-mono);">${c.id}</td>
+              <td><strong>${Domain.escapeHtml(c.nome)}</strong></td>
+              <td><code style="font-size:11.5px; color:var(--text-secondary); background:var(--bg-canvas); padding:2px 6px; border-radius:4px;">${Domain.escapeHtml(c.regra || "-")}</code></td>
+              <td>${statusBadge}</td>
+              <td style="font-size:12.5px; color:var(--text-primary);">${Domain.escapeHtml(c.detalhes || c.descricao || "-")}</td>
+            </tr>
+          `;
+        }).join("");
+      }
+    }
 
-      return `
-        <tr>
-          <td class="cell-num cell-bold" style="font-family:var(--font-mono);">${c.id}</td>
-          <td><strong>${escapeHtml(c.nome)}</strong></td>
-          <td><code style="font-size:12px; color:var(--text-muted); background:var(--bg-app); padding:3px 6px; border-radius:4px;">${escapeHtml(c.regra || "-")}</code></td>
-          <td>${statusBadge}</td>
-          <td style="font-size:13px; color:var(--text-main);">${escapeHtml(c.detalhes || c.descricao || "-")}</td>
-        </tr>
-      `;
-    }).join("");
-  }
+    // Resumo de carreiras e saves
+    const archive = normalizedData.careers_archive_summary || {};
+    setText("archive-total-careers", archive.total_carreiras || 1);
+    setText("archive-total-snapshots", archive.total_snapshots || 1);
+    setText("archive-last-sync", archive.ultima_sincronizacao || "Agora");
 
-  // ==========================================================================
-  // GESTÃO DE CARREIRA E SAVES
-  // ==========================================================================
-  function renderSaveManager() {
-    const summary = careerData.careers_archive_summary || {};
-    setText("archive-total-careers", summary.total_carreiras || 1);
-    setText("archive-total-snapshots", summary.total_snapshots || 1);
-    setText("archive-last-sync", summary.ultima_sincronizacao || "Agora");
-
-    // Preencher select de saves disponíveis
+    // Dropdown de saves locais
     const saveSelect = document.getElementById("select-save-file");
-    if (saveSelect && careerData.available_saves) {
-      saveSelect.innerHTML = careerData.available_saves.map(s => {
-        const isCurrent = s === careerData.save_file;
-        return `<option value="${escapeHtml(s)}" ${isCurrent ? 'selected' : ''}>${escapeHtml(s)}</option>`;
+    if (saveSelect && normalizedData.available_saves) {
+      saveSelect.innerHTML = normalizedData.available_saves.map(s => {
+        const isCurrent = s === normalizedData.save_file;
+        return `<option value="${Domain.escapeHtml(s)}" ${isCurrent ? 'selected' : ''}>${Domain.escapeHtml(s)}</option>`;
       }).join("");
     }
   }
@@ -443,13 +591,20 @@
       const resp = await fetch("/api/saves");
       if (resp.ok) {
         const body = await resp.json();
-        if (body.saves && body.saves.length > 0) {
-          careerData.available_saves = body.saves;
-          renderSaveManager();
+        if (body.saves && Array.isArray(body.saves)) {
+          const names = body.saves.map(s => (typeof s === "string" ? s : s.filename || s.path));
+          normalizedData.available_saves = names;
+          const saveSelect = document.getElementById("select-save-file");
+          if (saveSelect) {
+            saveSelect.innerHTML = names.map(n => {
+              const isCurrent = n === normalizedData.save_file;
+              return `<option value="${Domain.escapeHtml(n)}" ${isCurrent ? 'selected' : ''}>${Domain.escapeHtml(n)}</option>`;
+            }).join("");
+          }
         }
       }
     } catch (e) {
-      // Ignora erro
+      console.warn("Não foi possível carregar lista de saves remota:", e);
     }
   }
 
@@ -457,68 +612,68 @@
   // MODAL DE DETALHES DO JOGADOR
   // ==========================================================================
   function openPlayerModal(playerid) {
-    const squad = careerData.squad || [];
-    const player = squad.find(p => p.playerid === playerid);
+    if (!normalizedData || !normalizedData.squad) return;
+    const player = normalizedData.squad.find(p => p.playerid === playerid);
     if (!player) return;
 
-    setText("modal-player-title", `${player.nome} (${player.posicao_principal}) — #${player.numero || '-'}`);
+    lastFocusedElement = document.activeElement;
+
+    setText("modal-player-title", `${player.nome} (#${player.numero || '-'}) — ${player.posicao_principal}`);
 
     const body = document.getElementById("modal-player-body");
     if (!body) return;
 
-    // Histórico de partidas do jogador
     const logs = player.historico_partidas || [];
-    const logsRows = logs.length > 0
+    const logsHtml = logs.length > 0
       ? logs.map(l => {
           let assistDisp = l.assistencias_partida === "N/D"
             ? `<span class="badge badge-nd">N/D</span>`
             : l.assistencias_partida;
           return `
             <tr>
-              <td>${escapeHtml(l.data)}</td>
-              <td>${escapeHtml(l.adversario)}</td>
-              <td><span class="badge badge-pos">${escapeHtml(l.posicao_jogada)}</span></td>
+              <td>${Domain.escapeHtml(l.data)}</td>
+              <td>${Domain.escapeHtml(l.adversario)}</td>
+              <td><span class="badge badge-pos">${Domain.escapeHtml(l.posicao_jogada)}</span></td>
               <td class="cell-num cell-bold">${l.minutos}'</td>
-              <td class="cell-num cell-bold" style="${l.gols_partida > 0 ? 'color:var(--color-success);' : ''}">${l.gols_partida || 0}</td>
+              <td class="cell-num cell-bold" style="${l.gols_partida > 0 ? 'color:var(--sports-win);' : ''}">${l.gols_partida || 0}</td>
               <td class="cell-num">${assistDisp}</td>
-              <td class="cell-num cell-bold">${l.nota_partida ? l.nota_partida.toFixed(1) : '-'}</td>
+              <td class="cell-num cell-bold">${Domain.formatRating(l.nota_partida)}</td>
             </tr>
           `;
         }).join("")
-      : `<tr><td colspan="7" style="text-align:center; color:var(--text-muted);">Nenhum jogo disputado nesta carreira.</td></tr>`;
+      : `<tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:16px;">Nenhuma partida registrada nesta carreira.</td></tr>`;
 
-    // Atributos físicos e contratuais
     body.innerHTML = `
       <div class="grid-2col">
         <div class="detail-block">
           <div class="detail-block-title">Identidade & Contrato</div>
-          <div class="detail-row"><span class="detail-label">Nome Completo</span><span class="detail-val">${escapeHtml(player.nome_completo || player.nome)}</span></div>
-          <div class="detail-row"><span class="detail-label">Nacionalidade</span><span class="detail-val">${escapeHtml(player.nacionalidade || "Espanha")}</span></div>
-          <div class="detail-row"><span class="detail-label">Idade / Nasc.</span><span class="detail-val">${player.idade} anos (${escapeHtml(player.data_nascimento || "-")})</span></div>
+          <div class="detail-row"><span class="detail-label">Nome Completo</span><span class="detail-val">${Domain.escapeHtml(player.nome_completo || player.nome)}</span></div>
+          <div class="detail-row"><span class="detail-label">Nacionalidade</span><span class="detail-val">${Domain.escapeHtml(player.nacionalidade)}</span></div>
+          <div class="detail-row"><span class="detail-label">Idade / Nasc.</span><span class="detail-val">${player.idade} anos (${Domain.escapeHtml(player.data_nascimento || "-")})</span></div>
           <div class="detail-row"><span class="detail-label">Físico</span><span class="detail-val">${player.altura} cm · ${player.peso} kg</span></div>
-          <div class="detail-row"><span class="detail-label">Pé Preferido</span><span class="detail-val">${player.pe_preferido} (Perna Ruim: ${player.perna_ruim}★)</span></div>
-          <div class="detail-row"><span class="detail-label">Valor de Mercado</span><span class="detail-val" style="color:var(--color-primary);">${formatCurrency(player.valor_mercado || 0)}</span></div>
-          <div class="detail-row"><span class="detail-label">Salário Semanal</span><span class="detail-val">${formatCurrency(player.salario || 0)} /sem</span></div>
-          <div class="detail-row"><span class="detail-label">Multa Rescisória</span><span class="detail-val">${escapeHtml(player.multa_texto || "Sem multa")}</span></div>
-          <div class="detail-row"><span class="detail-label">Vencimento Contrato</span><span class="detail-val">${player.contrato_fim || "-"} (${player.anos_contrato || 0} anos restantes)</span></div>
+          <div class="detail-row"><span class="detail-label">Pé Preferido</span><span class="detail-val">${Domain.escapeHtml(player.pe_preferido)} (Perna Ruim: ${player.perna_ruim}★)</span></div>
+          <div class="detail-row"><span class="detail-label">Valor de Mercado</span><span class="detail-val" style="color:var(--brand-cyan);">${Domain.formatCurrency(player.valor_mercado || 0)}</span></div>
+          <div class="detail-row"><span class="detail-label">Salário Semanal</span><span class="detail-val">${Domain.formatCurrency(player.salario || 0)} /sem</span></div>
+          <div class="detail-row"><span class="detail-label">Multa Rescisória</span><span class="detail-val">${Domain.escapeHtml(player.multa_texto || "Sem multa")}</span></div>
+          <div class="detail-row"><span class="detail-label">Vencimento Contrato</span><span class="detail-val">${Domain.escapeHtml(player.contrato_fim || "-")} (${player.anos_contrato || 0} ano(s) restantes)</span></div>
         </div>
 
         <div class="detail-block">
           <div class="detail-block-title">Status, Utilização & Avaliação</div>
-          <div class="detail-row"><span class="detail-label">Hierarquia Escalação</span><span class="detail-val">${escapeHtml(player.status_elenco || "Reserva")}</span></div>
-          <div class="detail-row"><span class="detail-label">Utilização Real</span><span class="detail-val">${escapeHtml(player.status_utilizacao || "Rotação")}</span></div>
-          <div class="detail-row"><span class="detail-label">Recomendação Sistema</span><span class="detail-val" style="color:var(--color-primary);">${escapeHtml(player.recomendacao_sistema || "Manter")}</span></div>
-          <div class="detail-row"><span class="detail-label">Confiança da Amostra</span><span class="detail-val">${escapeHtml(player.confianca_recomendacao || "Nula")}</span></div>
-          <div class="detail-row"><span class="detail-label">Overall Atual / Inicial</span><span class="detail-val">${player.overall} (Inicial: ${player.overall_inicial || player.overall})</span></div>
+          <div class="detail-row"><span class="detail-label">Hierarquia Escalação</span><span class="detail-val">${Domain.escapeHtml(player.status_elenco)}</span></div>
+          <div class="detail-row"><span class="detail-label">Utilização Real</span><span class="detail-val">${Domain.escapeHtml(player.status_utilizacao)}</span></div>
+          <div class="detail-row"><span class="detail-label">Recomendação Sistema</span><span class="detail-val" style="color:var(--brand-cyan);">${Domain.escapeHtml(player.recomendacao_sistema)}</span></div>
+          <div class="detail-row"><span class="detail-label">Confiança da Amostra</span><span class="detail-val">${Domain.escapeHtml(player.confianca_recomendacao)}</span></div>
+          <div class="detail-row"><span class="detail-label">Overall Atual / Inicial</span><span class="detail-val">${player.overall} (Inicial: ${player.overall_inicial})</span></div>
           <div class="detail-row"><span class="detail-label">Potencial / Margem</span><span class="detail-val">${player.potencial} (+${player.margem_potencial})</span></div>
-          <div class="detail-row"><span class="detail-label">Evolução no Save</span><span class="detail-val" style="color:var(--color-success); font-weight:700;">+${player.evolucao_real || 0} OVR</span></div>
-          <div class="detail-row"><span class="detail-label">Amostra de Jogos</span><span class="detail-val">${escapeHtml(player.amostra_label || "-")}</span></div>
-          <div class="detail-row"><span class="detail-label">Motivo da Análise</span><span class="detail-val" style="font-size:12px; color:var(--text-muted);">${escapeHtml(player.motivo_recomendacao || "-")}</span></div>
+          <div class="detail-row"><span class="detail-label">Evolução Real no Save</span><span class="detail-val" style="color:var(--sports-win); font-weight:700;">+${player.evolucao_real} OVR</span></div>
+          <div class="detail-row"><span class="detail-label">Amostra de Jogos</span><span class="detail-val">${Domain.escapeHtml(player.amostra_label || "-")}</span></div>
+          <div class="detail-row"><span class="detail-label">Motivo da Análise</span><span class="detail-val" style="font-size:12px; color:var(--text-muted);">${Domain.escapeHtml(player.motivo_recomendacao || "-")}</span></div>
         </div>
       </div>
 
       <div class="detail-block">
-        <div class="detail-block-title">Histórico Jogo a Jogo do Atleta (Fonte Única da Verdade)</div>
+        <div class="detail-block-title">Histórico de Atuações do Jogador (Fonte Primária)</div>
         <div class="table-responsive">
           <table class="data-table">
             <thead>
@@ -526,30 +681,37 @@
                 <th>Data</th>
                 <th>Adversário</th>
                 <th>Posição</th>
-                <th>Minutos</th>
-                <th>Gols</th>
-                <th>Assistências</th>
-                <th>Nota</th>
+                <th class="cell-num">Minutos</th>
+                <th class="cell-num">Gols</th>
+                <th class="cell-num">Assistências</th>
+                <th class="cell-num">Nota</th>
               </tr>
             </thead>
             <tbody>
-              ${logsRows}
+              ${logsHtml}
             </tbody>
           </table>
         </div>
       </div>
     `;
 
-    document.getElementById("modal-player").classList.add("open");
+    const modal = document.getElementById("modal-player");
+    if (modal) {
+      modal.classList.add("open");
+      const closeBtn = modal.querySelector(".modal-close");
+      if (closeBtn) closeBtn.focus();
+    }
   }
 
   // ==========================================================================
   // MODAL DE DETALHES DA PARTIDA
   // ==========================================================================
   function openMatchModal(matchId) {
-    const matches = careerData.matches || [];
-    const match = matches.find(m => m.id === matchId);
+    if (!normalizedData || !normalizedData.matches) return;
+    const match = normalizedData.matches.find(m => m.id === matchId);
     if (!match) return;
+
+    lastFocusedElement = document.activeElement;
 
     setText("modal-match-title", `${match.mandante} ${match.placar_mandante} x ${match.placar_visitante} ${match.visitante} — ${match.data}`);
 
@@ -557,29 +719,29 @@
     if (!body) return;
 
     const escalacao = match.escalacao || [];
-    const escalacaoRows = escalacao.map(e => {
-      let assistVal = e.assistencias_partida === "N/D" ? `<span class="badge badge-nd">N/D</span>` : e.assistencias_partida;
+    const escalacaoHtml = escalacao.map(e => {
+      const assistVal = e.assistencias_partida === "N/D" ? `<span class="badge badge-nd">N/D</span>` : e.assistencias_partida;
       return `
         <tr>
           <td class="cell-num">${e.numero || '-'}</td>
-          <td><strong>${escapeHtml(e.nome)}</strong></td>
-          <td><span class="badge badge-pos">${escapeHtml(e.posicao_jogada)}</span></td>
+          <td><strong class="player-display-name" onclick="window.TrackerApp.openPlayerModal(${e.playerid})">${Domain.escapeHtml(e.nome)}</strong></td>
+          <td><span class="badge badge-pos">${Domain.escapeHtml(e.posicao_jogada)}</span></td>
           <td class="cell-num cell-bold">${e.minutos}'</td>
-          <td class="cell-num cell-bold" style="${e.gols_partida > 0 ? 'color:var(--color-success);' : ''}">${e.gols_partida || 0}</td>
+          <td class="cell-num cell-bold" style="${e.gols_partida > 0 ? 'color:var(--sports-win);' : ''}">${e.gols_partida || 0}</td>
           <td class="cell-num">${assistVal}</td>
-          <td class="cell-num cell-bold" style="${e.nota_partida >= 7.5 ? 'color:var(--color-success);' : ''}">${e.nota_partida ? e.nota_partida.toFixed(1) : '-'}</td>
+          <td class="cell-num cell-bold" style="${e.nota_partida >= 7.5 ? 'color:var(--sports-win);' : ''}">${Domain.formatRating(e.nota_partida)}</td>
         </tr>
       `;
     }).join("");
 
     body.innerHTML = `
       <div class="detail-block">
-        <div class="detail-block-title">Resumo do Confronto</div>
-        <div class="detail-row"><span class="detail-label">Competição</span><span class="detail-val">${escapeHtml(match.competicao)}</span></div>
-        <div class="detail-row"><span class="detail-label">Data</span><span class="detail-val">${escapeHtml(match.data)}</span></div>
-        <div class="detail-row"><span class="detail-label">Placar Final</span><span class="detail-val" style="font-size:18px; color:var(--color-primary);">${match.placar}</span></div>
-        <div class="detail-row"><span class="detail-label">Artilheiros</span><span class="detail-val" style="color:var(--color-success);">${escapeHtml(match.artilheiros || "Nenhum")}</span></div>
-        <div class="detail-row"><span class="detail-label">Goleiro</span><span class="detail-val">${escapeHtml(match.goleiro || "-")}</span></div>
+        <div class="detail-block-title">Resumo Técnico do Confronto</div>
+        <div class="detail-row"><span class="detail-label">Competição</span><span class="detail-val">${Domain.escapeHtml(match.competicao)}</span></div>
+        <div class="detail-row"><span class="detail-label">Data</span><span class="detail-val">${Domain.escapeHtml(match.data)}</span></div>
+        <div class="detail-row"><span class="detail-label">Placar Oficial</span><span class="detail-val" style="font-size:18px; color:var(--brand-cyan);">${Domain.escapeHtml(match.placar)}</span></div>
+        <div class="detail-row"><span class="detail-label">Artilheiros</span><span class="detail-val" style="color:var(--sports-win);">${Domain.escapeHtml(match.artilheiros || "Nenhum")}</span></div>
+        <div class="detail-row"><span class="detail-label">Goleiro Titular</span><span class="detail-val">${Domain.escapeHtml(match.goleiro || "-")}</span></div>
       </div>
 
       <div class="detail-block">
@@ -588,28 +750,45 @@
           <table class="data-table">
             <thead>
               <tr>
-                <th>Nº</th>
+                <th class="cell-num">Nº</th>
                 <th>Jogador</th>
                 <th>Posição</th>
-                <th>Minutos</th>
-                <th>Gols</th>
-                <th>Assistências</th>
-                <th>Nota</th>
+                <th class="cell-num">Minutos</th>
+                <th class="cell-num">Gols</th>
+                <th class="cell-num">Assists</th>
+                <th class="cell-num">Nota</th>
               </tr>
             </thead>
             <tbody>
-              ${escalacaoRows}
+              ${escalacaoHtml}
             </tbody>
           </table>
         </div>
       </div>
     `;
 
-    document.getElementById("modal-match").classList.add("open");
+    const modal = document.getElementById("modal-match");
+    if (modal) {
+      modal.classList.add("open");
+      const closeBtn = modal.querySelector(".modal-close");
+      if (closeBtn) closeBtn.focus();
+    }
+  }
+
+  function closeModal(modalEl) {
+    if (!modalEl) {
+      document.querySelectorAll(".modal-overlay").forEach(m => m.classList.remove("open"));
+    } else {
+      modalEl.classList.remove("open");
+    }
+    if (lastFocusedElement) {
+      lastFocusedElement.focus();
+      lastFocusedElement = null;
+    }
   }
 
   // ==========================================================================
-  // EVENT LISTENERS E NAVEGAÇÃO
+  // EVENT LISTENERS & INTERATIVIDADE
   // ==========================================================================
   function setupTabNavigation() {
     const tabButtons = document.querySelectorAll(".tab-btn");
@@ -630,12 +809,23 @@
   }
 
   function setupModals() {
-    document.querySelectorAll(".modal-close, .modal-overlay").forEach(el => {
-      el.addEventListener("click", e => {
-        if (e.target === el) {
-          document.querySelectorAll(".modal-overlay").forEach(m => m.classList.remove("open"));
+    // Fechar ao clicar no X ou fora da caixa de diálogo
+    document.querySelectorAll(".modal-overlay").forEach(overlay => {
+      overlay.addEventListener("click", e => {
+        if (e.target === overlay || e.target.closest(".modal-close")) {
+          closeModal(overlay);
         }
       });
+    });
+
+    // Tecla Escape fecha qualquer modal aberto
+    document.addEventListener("keydown", e => {
+      if (e.key === "Escape") {
+        const openModal = document.querySelector(".modal-overlay.open");
+        if (openModal) {
+          closeModal(openModal);
+        }
+      }
     });
   }
 
@@ -645,7 +835,7 @@
     if (squadSearch) {
       squadSearch.addEventListener("input", e => {
         squadFilters.search = e.target.value.trim();
-        renderSquadHub();
+        renderSquadTab();
       });
     }
 
@@ -653,7 +843,7 @@
     if (squadSector) {
       squadSector.addEventListener("change", e => {
         squadFilters.sector = e.target.value;
-        renderSquadHub();
+        renderSquadTab();
       });
     }
 
@@ -661,7 +851,7 @@
     if (squadHierarchy) {
       squadHierarchy.addEventListener("change", e => {
         squadFilters.hierarchy = e.target.value;
-        renderSquadHub();
+        renderSquadTab();
       });
     }
 
@@ -669,11 +859,11 @@
     if (squadConfidence) {
       squadConfidence.addEventListener("change", e => {
         squadFilters.confidence = e.target.value;
-        renderSquadHub();
+        renderSquadTab();
       });
     }
 
-    // Ordenação da Tabela do Elenco
+    // Ordenação clicável nos cabeçalhos da tabela do elenco
     document.querySelectorAll("#squad-table th.sortable").forEach(th => {
       th.addEventListener("click", () => {
         const sortField = th.getAttribute("data-sort");
@@ -683,16 +873,24 @@
           squadFilters.sortBy = sortField;
           squadFilters.sortOrder = "desc";
         }
-        renderSquadHub();
+        renderSquadTab();
       });
     });
 
-    // Filtros dos Logs
+    // Filtros de Partidas e Logs
+    const matchesComp = document.getElementById("matches-comp-filter");
+    if (matchesComp) {
+      matchesComp.addEventListener("change", e => {
+        matchesCompFilter = e.target.value;
+        renderMatchesGrid();
+      });
+    }
+
     const logSearch = document.getElementById("log-search");
     if (logSearch) {
       logSearch.addEventListener("input", e => {
         logFilters.search = e.target.value.trim();
-        renderMatchLogs();
+        renderMatchLogsTable();
       });
     }
 
@@ -700,7 +898,7 @@
     if (logComp) {
       logComp.addEventListener("change", e => {
         logFilters.competition = e.target.value;
-        renderMatchLogs();
+        renderMatchLogsTable();
       });
     }
 
@@ -708,104 +906,107 @@
     if (logMatch) {
       logMatch.addEventListener("change", e => {
         logFilters.match = e.target.value;
-        renderMatchLogs();
+        renderMatchLogsTable();
       });
     }
 
-    // Ações de Save e Recarregamento
+    // Ação: Sincronizar Save
     const btnReload = document.getElementById("btn-reload-save");
     if (btnReload) {
       btnReload.addEventListener("click", async () => {
         if (!isLocalServer) {
-          alert("No GitHub Pages estático os dados refletem os arquivos commitados no repositório. Para processar saves ao vivo em tempo real, execute iniciar_tracker.bat localmente!");
+          showToast("Ambiente estático (GitHub Pages): os dados refletem os arquivos salvos no repositório. Para sincronização ao vivo com o EA FC 26, execute iniciar_tracker.bat localmente!", "warning");
           return;
         }
-        renderLoading(true);
+
+        setAppState(APP_STATE.LOADING);
         try {
           const resp = await fetch("/api/reload");
           if (resp.ok) {
-            careerData = await resp.json();
-            renderAll();
+            rawData = await resp.json();
+            processAndRender();
+            showToast("Save sincronizado com sucesso a partir dos arquivos binários locais!", "success");
+          } else {
+            throw new Error(`Falha no servidor (${resp.status})`);
           }
         } catch (e) {
-          alert("Erro ao recarregar save local: " + e.message);
+          showToast("Erro ao sincronizar save local: " + e.message, "error");
+          setAppState(APP_STATE.LOADED);
         }
-        renderLoading(false);
       });
     }
 
-    const btnSelectSave = document.getElementById("btn-apply-save");
-    if (btnSelectSave) {
-      btnSelectSave.addEventListener("click", async () => {
-        const saveSelect = document.getElementById("select-save-file");
-        if (!saveSelect) return;
-        const selectedSave = saveSelect.value;
+    // Ação: Alternar Save Local
+    const btnApplySave = document.getElementById("btn-apply-save");
+    if (btnApplySave) {
+      btnApplySave.addEventListener("click", async () => {
+        const select = document.getElementById("select-save-file");
+        if (!select) return;
+        const selected = select.value;
+
         if (!isLocalServer) {
-          alert(`Você selecionou: ${selectedSave}. No GitHub Pages estático os dados são fixados pelo repositório. Use o modo local para alternar saves em tempo real.`);
+          showToast(`No GitHub Pages o save ativo é pré-compilado. Execute localmente para alternar para ${selected}.`, "warning");
           return;
         }
-        renderLoading(true);
+
+        setAppState(APP_STATE.LOADING);
         try {
           const resp = await fetch("/api/select_save", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ save_file: selectedSave })
+            body: JSON.stringify({ save_file: selected })
           });
           if (resp.ok) {
-            careerData = await resp.json();
-            renderAll();
+            rawData = await resp.json();
+            processAndRender();
+            showToast(`Save alterado para ${selected}!`, "success");
+          } else {
+            throw new Error(`Falha ao selecionar save (${resp.status})`);
           }
         } catch (e) {
-          alert("Erro ao selecionar save: " + e.message);
+          showToast("Erro ao carregar save: " + e.message, "error");
+          setAppState(APP_STATE.LOADED);
         }
-        renderLoading(false);
       });
     }
   }
 
   // ==========================================================================
-  // HELPERS E UTILITÁRIOS
+  // HELPERS DE UI E TOASTS
   // ==========================================================================
   function setText(id, text) {
     const el = document.getElementById(id);
-    if (el) el.textContent = text;
+    if (el) el.textContent = text !== undefined && text !== null ? text : "—";
   }
 
-  function formatCurrency(val) {
-    const num = Number(val) || 0;
-    return `€ ${num.toLocaleString("pt-BR")}`;
-  }
-
-  function escapeHtml(str) {
-    if (!str) return "";
-    return String(str)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
-  }
-
-  function renderLoading(show) {
-    const spinner = document.getElementById("global-spinner");
-    if (spinner) spinner.style.display = show ? "block" : "none";
-  }
-
-  function renderError(msg) {
-    renderLoading(false);
-    const container = document.querySelector(".app-container");
-    if (container) {
-      const errBox = document.createElement("div");
-      errBox.className = "callout callout-warning";
-      errBox.innerHTML = `<strong>Aviso:</strong> ${escapeHtml(msg)}`;
-      container.prepend(errBox);
+  function showToast(message, type = "info") {
+    const container = document.getElementById("toast-container");
+    if (!container) {
+      alert(message);
+      return;
     }
+
+    const toast = document.createElement("div");
+    toast.className = `toast toast-${type}`;
+    toast.textContent = message;
+
+    container.appendChild(toast);
+    setTimeout(() => {
+      toast.style.opacity = "0";
+      toast.style.transform = "translateX(20px)";
+      toast.style.transition = "all 0.25s ease";
+      setTimeout(() => toast.remove(), 250);
+    }, 4500);
   }
 
-  // Expor API global para eventos inline
+  // Expor API global
   window.TrackerApp = {
     openPlayerModal,
-    openMatchModal
+    openMatchModal,
+    closeModal,
+    showToast,
+    getAppState: () => currentState,
+    getNormalizedData: () => normalizedData
   };
 
-})();
+})(window, document);

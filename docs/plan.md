@@ -1,28 +1,106 @@
-# Plano do Projeto (v2.0) — Universal Career Mode Tracker (Multi-Carreiras, Multi-Ligas & Histórico Completo)
+# FC Manager — Plano Arquitetural & Especificação do Sistema (v3.2)
 
-Este plano expande o escopo do sistema para torná-lo uma **plataforma universal de acompanhamento do Modo Carreira (EA FC 25 / FC 26)**, 100% adaptável a **qualquer carreira, qualquer clube, qualquer país e qualquer divisão/competição**, com histórico permanente de classificações e um sistema completo de filtros e organização.
+## 1. Visão Geral do Sistema
 
----
-
-## 1. Arquitetura Universal Multi-Carreiras, Multi-Times e Multi-Países
-
-- **Detecção 100% Automática:** Extrai `clubteamid` de `career_managerinfo`, cruza com os **842 clubes** (`teams`), **53 ligas** (`leagues` e `leagueteamlinks`) e o mapa global de países (`COUNTRY_MAP`).
-- **Estatísticas Individuais Reais por Competição (`stndgs` no bloco `mlop`):** Decodifica os 24.000 registros binários de 73 bytes da tabela `stndgs` (`teamid`, `playerid`, `compobjid`, `mins`, `gols`, `assistências`, `jogos`, `clean sheets`, `cartões` e gols por partida), garantindo que a soma de gols individuais bata **exatamente** com os gols da equipe em cada competição (14 gols em 6 jogos: 6 na Pré-Temporada + 8 na LaLiga Hypermotion).
-- **Resolução Universal de Nomes de Jogadores:** Combina `editedplayernames` (jogadores da base/editados), `dcplayernames` (5.617 nomes dinâmicos no save) e o dicionário global de atletas.
-- **Gerenciador de Múltiplas Carreiras:** Permite alternar entre diferentes saves/carreiras (tanto da pasta local quanto da pasta oficial `AppData\Local\EA SPORTS FC 26\settings`) sem perder o histórico das anteriores.
+O **FC Manager** é um aplicativo desktop-first para acompanhamento de carreiras do EA SPORTS FC 26, projetado para operar em dois ambientes complementares:
+1. **GitHub Pages (Estático):** Hospedagem estática de alto desempenho consumindo `career_data.json` e bundle `career_data.js`.
+2. **Servidor Local Python (`src/app.py`):** Servidor HTTP local com suporte a descompressão Oodle, parsing binário em tempo real e atualização de arquivos de save.
 
 ---
 
-## 2. Histórico Completo de Classificações (Todas as Ligas e Torneios)
+## 2. Camadas Arquiteturais
 
-1. **Todas as Competições do Clube do Usuário (Atuais e Passadas):** Qualquer divisão nacional, torneio de pré-temporada ou competição continental disputada pelo clube.
-2. **Explorador de Todas as Ligas do Mundo (Radar Global do Save):** Permite consultar a tabela de classificação de todas as ligas e copas simuladas no save (LaLiga 1ª e 2ª Divisão, Premier League, Championship, Serie A, Bundesliga, Ligue 1, Liga Portugal, Champions League, Europa League, Conference League, etc.).
-3. **Arquivo Histórico Temporada a Temporada (`careers_archive.json`):** Salva snapshots históricos por temporada e decodifica `career_managerhistory` (campanha anual, troféus e maiores transferências).
+```
+┌────────────────────────────────────────────────────────┐
+│            Interface Web (index.html)                  │
+│   Visão Geral · Elenco · Partidas · Competições · Save │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+┌──────────────────────────▼─────────────────────────────┐
+│          Controlador de UI (assets/js/main.js)         │
+│  Gestão de Estado · Eventos · Modais ARIA · Toasts     │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+┌──────────────────────────▼─────────────────────────────┐
+│        Núcleo de Domínio Puro (assets/js/domain.js)    │
+│  Normalização Canônica · Filtros · Ordenação · XSS     │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+           ┌───────────────┴───────────────┐
+           │                               │
+┌──────────▼───────────────┐   ┌───────────▼────────────┐
+│    GitHub Pages (Web)    │   │  Servidor Local (API)  │
+│ assets/data/career_data  │   │ /api/data, /api/reload │
+└──────────────────────────┘   └───────────┬────────────┘
+                                           │
+                               ┌───────────▼────────────┐
+                               │ Extrator (save_parser) │
+                               │ DB1/DB2 + Oodle + Exps │
+                               └────────────────────────┘
+```
 
 ---
 
-## 3. Sistema Avançado de Filtros, Busca e Organização
+## 3. Modelo de Dados Canônico
 
-- **Elenco & Estatísticas:** Filtros combinados por Setor, Posição Exata, Status no Elenco, Faixa de Idade, Faixa de Overall/Potencial, Situação Contratual, Produção em Campo e Competição (*Temporada Completa*, *Apenas Liga Nacional*, *Apenas Pré-Temporada/Copas*), dando foco a Minutos, Gols, Assistências, Notas, Overall, Potencial, Idade e Posições.
-- **Jogos & Adversários:** Filtros por Competição, Mando de Campo, Resultado e Busca por Adversário, exibindo o retrospecto consolidado do filtro ativo e os autores dos gols em cada partida.
-- **Classificações & Ligas do Mundo:** Filtros por Escopo (*Competições do Meu Clube*, *Ligas e Copas do Mundo*, *Histórico de Temporadas*), País/Região e Turno/Mando (*Geral*, *Casa*, *Fora*).
+Para eliminar inconsistências causadas por strings compostas geradas em versões anteriores da planilha ou do extrator, o sistema introduz quatro campos canônicos normalizados em cada registro de atleta:
+
+1. **`setor_canonico`**: `"goleiro" | "defesa" | "meio" | "ataque"`
+2. **`hierarquia_tatica`**: `"titular" | "reserva" | "nao_relacionado"`
+3. **`confianca_amostra_canonica`**: `"alta" | "moderada" | "baixa" | "nula"`
+   - `alta`: $\ge 4$ jogos e $\ge 270$ minutos.
+   - `moderada`: $\ge 3$ jogos e $\ge 150$ minutos.
+   - `baixa`: $> 0$ jogos, mas $< 3$ jogos ou $< 150$ minutos (sob observação).
+   - `nula`: $0$ minutos disputados.
+4. **`utilizacao_canonica`**: `"titular_efetivo" | "rotacao" | "suplente" | "sem_minutos"`
+
+---
+
+## 4. Separação Estrita de Competições
+
+As estatísticas da carreira são divididas explicitamente no objeto `club.competicoes_separadas`:
+
+| Competição | Jogos | V | E | D | GP | GC | Pontos | Observações |
+|------------|-------|---|---|---|----|----|--------|-------------|
+| **LaLiga Hypermotion (Liga)** | 3 | 2 | 1 | 0 | 8 | 2 | 7 | 2º Lugar na classificação oficial |
+| **Champions Trophy (Pré-Temporada)** | 3 | 2 | 1 | 0 | 6 | 1 | — | Campeão Invicto (+€ 1.100.000) |
+| **Campanha Total** | 6 | 4 | 2 | 0 | 14 | 3 | — | 14 gols individuais reconciliados |
+
+---
+
+## 5. Protocolo de Auditoria e Integridade Contábil
+
+O checklist de validação executa 9 regras técnicas:
+1. **Reconciliação de Gols da Equipe vs Logs Individuais:** Partidas (14 GP) == Logs (14 GP) == Elenco (14 GP).
+2. **Consistência de Assistências por Competição:** Relato transparente com classificação `PARCIAL (N/D NO BINÁRIO)` para jogadores com assistências e múltiplos jogos.
+3. **Consistência de Minutos e Fonte Única:** Minutos no elenco rigorosamente iguais à soma dos logs de cada atleta.
+4. **Respeito ao Teto Físico de Minutagem:** Nenhum atleta ultrapassa o limite de 540 minutos em 6 partidas.
+5. **Classificação e Pontuação da Liga:** 3 jogos, 7 pontos, saldo +6.
+6. **Classificação da Pré-Temporada:** 3 jogos, 7 pontos, saldo +5, troféu confirmado.
+7. **Consistência da Evolução:** `POT >= OVR` para 100% dos atletas.
+8. **Validação de Folha e Valores Financeiros:** Folha semanal de € 90.400 e valor de mercado de € 46.250.000 auditados.
+9. **Hierarquia Tática vs Minutos:** Distinção explícita entre a escalação tática definida pelo treinador e a minutagem real acumulada.
+
+---
+
+## 6. Cobertura da Suíte de Testes (tests/test_audit_suite.py)
+
+A suíte cobre 18 cenários automatizados:
+1. Carregamento de JSON válido e ausência de caminhos de usuário.
+2. Fallback estático `career_data.js`.
+3. Tratamento de entradas nulas ou vazias.
+4. Rejeição segura de JSON inválido.
+5. Indicação honesta de datas sem fake `01/01/2008`.
+6. Filtragem por hierarquia com status compostos (`Titular (ZAG)`).
+7. Busca flexível por nome, sobrenome e posição.
+8. Ordenação bidirecional com tratamento de nulos.
+9. Tratamento de valores zero, nulos e `N/D`.
+10. Separação contábil entre Liga e Pré-Temporada.
+11. Reconciliação dos gols por partida.
+12. Minutos totais derivados diretamente dos logs.
+13. Auditoria sem fallback arbitrário `|| 8`.
+14. Respostas adequadas do servidor local a falhas.
+15. Consistência entre exportações CSV/Excel e JSON.
+16. Sanitização contra injeção de HTML/XSS.
+17. Navegação acessível e fechamento de modal via `Escape`.
+18. Responsividade de layout e numerais tabulares.
