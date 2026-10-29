@@ -284,10 +284,13 @@
     const safeRaw = (rawData && typeof rawData === "object") ? rawData : {};
     const data = Object.assign({}, safeRaw);
 
-    // Sanitizar caminhos do save (remover caminhos absolutos do Windows).
-    // Dados publicados não trazem save_path: não fabricamos um caminho que não existe.
-    data.save_file = String(data.save_file || "Save local").replace(/^.*[\\\/]/, "");
-    data.save_path = data.save_path ? `saves/${String(data.save_path).replace(/^.*[\\\/]/, "")}` : "";
+    // Sanitizar metadados de save caso existam (ambiente local); não fabricar caminhos inexistentes
+    if (data.save_file) {
+      data.save_file = String(data.save_file).replace(/^.*[\\\/]/, "");
+    }
+    if (data.save_path) {
+      data.save_path = `saves/${String(data.save_path).replace(/^.*[\\\/]/, "")}`;
+    }
     data.updated_at = String(data.updated_at || "").trim();
 
     // Normalizar elenco

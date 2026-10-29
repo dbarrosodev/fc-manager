@@ -183,7 +183,7 @@
     setText("club-league", club.liga || "LaLiga Hypermotion");
     setText("save-date", club.data_atual || "Indisponível");
     setText("career-season", club.temporada || "Temporada 1");
-    setText("current-save-name", normalizedData.save_file || "Save local");
+    setText("current-save-name", normalizedData.save_file || "Carreira Ativa");
 
     // Métricas estritamente separadas (sem números fictícios de fallback)
     setText("stat-league-record", `${liga.jogos || 0}J: ${liga.vitorias || 0}V ${liga.empates || 0}E ${liga.derrotas || 0}D`);

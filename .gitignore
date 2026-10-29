@@ -22,9 +22,11 @@ $RECYCLE.BIN/
 # EA FC binary saves and personal career files (nunca versionar saves binários pessoais reais)
 saves/*
 !saves/.gitkeep
-CmMgr*
+**/CmMgr*
+**/cmmgr*
 *.save
 *.bin
+*.bak
 
 # Cópia local completa dos dados (contém nome/caminho do save pessoal)
 assets/data/local/

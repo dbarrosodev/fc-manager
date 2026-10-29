@@ -35,12 +35,12 @@
 ## Fase 2: Privacidade e Limpeza de Dados Pessoais
 
 - [x] **2.1 Desindexar arquivos binários pessoais do rastreamento Git**
-  - Executado: `git rm --cached saves/CmMgrC20261027114537158`.
+  - Executado: `git rm --cached saves/<arquivo_de_save>`.
   - Criado arquivo sentinela: `saves/.gitkeep`.
 - [x] **2.2 Atualizar regras de exclusão no `.gitignore`**
   - Ignorar `saves/*`, `!saves/.gitkeep`, `CmMgr*`, `*.save`, `*.bin`.
 - [x] **2.3 Eliminar caminhos absolutos locais do Windows nos JSONs e bundles**
-  - Substituída qualquer ocorrência de `C:\Users\Daniel\...` por caminho relativo limpo `saves/CmMgr...`.
+  - Eliminada qualquer ocorrência de caminhos locais de usuário nos dados exportados.
   - Sanitizado `save_path` e `available_saves` no motor Python `src/save_parser.py` e em `assets/js/domain.js`.
 - [x] **2.4 Documentar presença de dados em commits antigos do histórico Git**
   - Registrado que o commit `ab88d09` ainda possui o arquivo de save em seu snapshot no histórico.
@@ -150,7 +150,7 @@
 - [x] **9.1 Testar live via HTTP no domínio do GitHub Pages**
   - URL: `https://dbarrosodev.github.io/fc-manager/`
   - Validado via HTTP 200: HTML servido contém `FC MANAGER` e **não** contém `01/01/2008`.
-  - Validado via HTTP 200: `career_data.json` servido não contém caminhos do Windows (`save_path: saves/CmMgr...`).
+  - Validado via HTTP 200: `career_data.json` servido não contém caminhos do Windows nem metadados privados de saves.
   - Validado via HTTP 200: `domain.js` servido contém `Indisponível` e `hierarquia_tatica`.
 - [x] **9.2 Redigir relatório final de entrega**
   - Documentados arquivos modificados, problemas sanados e status da publicação.

@@ -2009,9 +2009,10 @@ LOCAL_JSON_PATH = os.path.join(LOCAL_DATA_DIR, "career_data.local.json")
 
 
 def sanitize_for_public_export(career_data):
-    """Remove metadados do save pessoal (nome, caminho, lista de saves) dos dados publicados."""
+    """Remove completamente metadados ou identificadores de save privado dos dados públicos.
+    Garante que 'save_file', 'save_path' e 'available_saves' não existam no payload público."""
     public = copy.deepcopy(career_data)
-    public["save_file"] = PUBLIC_SAVE_LABEL
+    public.pop("save_file", None)
     public.pop("save_path", None)
     public.pop("available_saves", None)
     for entry in public.get("careers_archive_summary", None) or []:
