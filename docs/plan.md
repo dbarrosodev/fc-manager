@@ -14,17 +14,17 @@
 - [x] [Fase 6: Verificação de Fluxos Funcionais (Local vs GitHub Pages)](#fase-6-verificação-de-fluxos-funcionais-local-vs-github-pages)
 - [x] [Fase 7: Automação Determinística do Deploy (GitHub Actions)](#fase-7-automação-determinística-do-deploy-github-actions)
 - [x] [Fase 8: Homologação da Suíte de Testes e Mutação](#fase-8-homologação-da-suíte-de-testes-e-mutação)
-- [ ] [Fase 9: Validação da Página Publicada & Relatório de Conclusão](#fase-9-validação-da-página-publicada--relatório-de-conclusão)
+- [x] [Fase 9: Validação da Página Publicada & Relatório de Conclusão](#fase-9-validação-da-página-publicada--relatório-de-conclusão)
 
 ---
 
 ## Fase 1: Diagnóstico de Versão e Alinhamento do Deploy
 
 - [x] **1.1 Mapear descompasso entre local, repositório remoto e GitHub Pages**
-  - **Local / HEAD:** Commit `ead473f` (`feat: complete FC Manager v3.2 audit...`).
-  - **Remoto (`origin/main`):** Commit `ead473f` recebido com sucesso.
-  - **GitHub Pages (`https://dbarrosodev.github.io/fc-manager/`):** Ainda servindo o commit antigo `ab88d09` (`Last-Modified: Thu, 29 Oct 2026 03:09:52 GMT`).
-  - **Causa Raiz Identificada:** O deploy automático via branch do GitHub Pages não disparou nova build para o commit recente ou reteve cache no CDN Fastly/Varnish.
+  - **Local / HEAD:** Commit `643a2fe` (`fix(deploy): automate GitHub Pages deployment workflow...`).
+  - **Remoto (`origin/main`):** Commit `643a2fe` recebido com sucesso.
+  - **GitHub Pages (`https://dbarrosodev.github.io/fc-manager/`):** Atualizado e servindo a versão v3.2 via workflow oficial do GitHub Actions.
+  - **Causa Raiz Identificada:** O deploy automático via branch do GitHub Pages não disparou nova build para o commit recente por falta de workflow explícito do GitHub Actions.
 - [x] **1.2 Configurar workflow de deploy no GitHub Actions**
   - Criado `.github/workflows/deploy.yml` para compilar e publicar o site estático em cada push na branch `main`.
 - [x] **1.3 Validar que todos os arquivos estáticos na raiz pertencem à versão v3.2**
@@ -114,8 +114,8 @@
   - Disparo em `push` na branch `main`.
   - Configuração de permissões (`pages: write`, `id-token: write`).
   - Utilização das actions oficiais (`actions/checkout@v4`, `actions/configure-pages@v5`, `actions/upload-pages-artifact@v3`, `actions/deploy-pages@v4`).
-- [ ] **7.2 Commit e push do workflow para o repositório**
-  - Disparar o workflow no GitHub e validar a execução da action.
+- [x] **7.2 Commit e push do workflow para o repositório**
+  - Workflow executado com sucesso no GitHub Actions (Run ID `40815449533` - status `success`).
 
 ---
 
@@ -147,9 +147,10 @@
 
 ## Fase 9: Validação da Página Publicada & Relatório de Conclusão
 
-- [ ] **9.1 Testar live via HTTP no domínio do GitHub Pages**
+- [x] **9.1 Testar live via HTTP no domínio do GitHub Pages**
   - URL: `https://dbarrosodev.github.io/fc-manager/`
-  - Validar que o HTML servido contém `FC MANAGER` e **não** contém `01/01/2008`.
-  - Validar que `career_data.json` servido não contém caminhos do Windows.
-- [ ] **9.2 Redigir relatório final de entrega**
-  - Documentar arquivos modificados, problemas sanados e status da publicação.
+  - Validado via HTTP 200: HTML servido contém `FC MANAGER` e **não** contém `01/01/2008`.
+  - Validado via HTTP 200: `career_data.json` servido não contém caminhos do Windows (`save_path: saves/CmMgr...`).
+  - Validado via HTTP 200: `domain.js` servido contém `Indisponível` e `hierarquia_tatica`.
+- [x] **9.2 Redigir relatório final de entrega**
+  - Documentados arquivos modificados, problemas sanados e status da publicação.
