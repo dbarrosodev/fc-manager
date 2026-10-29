@@ -28,10 +28,6 @@
           <span class="brand-sub">SPORTS ANALYTICS</span>
         </div>
         <div id="data-source-badge" class="badge badge-status-synced" role="status">Status: Dados Sincronizados</div>
-        <div class="save-pill">
-          <span style="color:var(--text-muted);">Save:</span>
-          <strong id="current-save-name" style="color:#ffffff;">Carreira Ativa</strong>
-        </div>
       </div>
 
       <div class="topbar-actions">
@@ -243,7 +239,7 @@
                 <div class="board-metrics">
                   <div class="pitch-formation-picker">
                     <span class="board-metric">Formação:</span>
-                    <span id="tactical-formation" class="sr-only"><span id="xi-formation">4-3-3</span></span>
+                    <span id="tactical-formation" class="sr-only" style="display:none;"><span id="xi-formation">4-3-3</span></span>
                     <select id="select-pitch-formation" class="select-control pitch-formation-select" title="Alterar formação tática" aria-label="Esquema Tático">
                       <option value="auto">Auto (4-3-3)</option>
                       <option value="4-3-3">4-3-3</option>

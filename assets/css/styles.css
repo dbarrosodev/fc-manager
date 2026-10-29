@@ -3015,3 +3015,8 @@ th,
 .player-modal-country {
   color: var(--text-muted);
 }
+
+/* Utilitário para ocultar elementos visuais mantendo acessibilidade ou testes */
+.sr-only {
+  display: none !important;
+}
