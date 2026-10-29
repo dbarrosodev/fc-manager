@@ -42,6 +42,11 @@
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
           Sincronizar
         </button>
+        <label id="btn-upload-label" for="input-save-upload" class="btn btn-sm btn-upload-save" title="Enviar arquivo de save para análise">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Enviar Save
+        </label>
+        <input type="file" id="input-save-upload" accept=".json,.js,*" style="display:none;" aria-label="Enviar arquivo de save">
         <a id="btn-export-xlsx" href="#" download class="btn btn-sm btn-success" title="Exportar Planilha Excel (.xlsx)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Excel (.xlsx)
@@ -223,7 +228,16 @@
                   <h2 class="board-title">11 Titular Mais Utilizado (XI Tático)</h2>
                 </div>
                 <div class="board-metrics">
-                  <span class="board-metric">Formação: <strong id="tactical-formation">4-3-3</strong></span>
+                  <div class="pitch-formation-picker">
+                    <span class="board-metric">Formação: <strong id="tactical-formation"><strong id="xi-formation">4-3-3</strong></strong></span>
+                    <select id="select-pitch-formation" class="select-control pitch-formation-select" title="Alterar formação tática" aria-label="Esquema Tático">
+                      <option value="auto">Auto (Detectar)</option>
+                      <option value="4-3-3">4-3-3</option>
+                      <option value="4-2-3-1">4-2-3-1</option>
+                      <option value="4-4-2">4-4-2</option>
+                      <option value="3-5-2">3-5-2</option>
+                    </select>
+                  </div>
                   <span class="board-metric">Média OVR: <strong id="tactical-avg-ovr">—</strong></span>
                   <span class="board-metric">Média Idade: <strong id="tactical-avg-age">—</strong></span>
                   <span class="board-metric">Valor Titulares: <strong id="tactical-starter-val">—</strong></span>
@@ -424,9 +438,38 @@
                   <option value="away">Fora de Casa</option>
                 </select>
               </div>
+              <div class="filter-group">
+                <label for="matches-result-filter" class="filter-label">Resultado:</label>
+                <select id="matches-result-filter" class="select-control">
+                  <option value="all">Todos os Resultados</option>
+                  <option value="win">Vitórias</option>
+                  <option value="draw">Empates</option>
+                  <option value="loss">Derrotas</option>
+                </select>
+              </div>
             </div>
           </div>
           <div class="card-body">
+            <!-- Barra de Resumo Analítico das Partidas Filtradas -->
+            <div id="matches-filter-summary" class="filter-summary-bar" aria-label="Resumo estatístico das partidas filtradas">
+              <div class="summary-item">
+                <span class="summary-label">Partidas:</span>
+                <strong id="summary-filtered-count" class="summary-val">0</strong>
+              </div>
+              <div class="summary-item">
+                <span class="summary-label">Retrospecto:</span>
+                <strong id="summary-filtered-record" class="summary-val">0V · 0E · 0D</strong>
+              </div>
+              <div class="summary-item">
+                <span class="summary-label">Balanço de Gols:</span>
+                <strong id="summary-filtered-goals" class="summary-val">0 GP / 0 GC (0 SG)</strong>
+              </div>
+              <div class="summary-item">
+                <span class="summary-label">Aproveitamento:</span>
+                <strong id="summary-filtered-pct" class="summary-val">0.0%</strong>
+              </div>
+            </div>
+
             <div id="matches-grid-container" class="matches-grid">
               <!-- Preenchido via main.js -->
             </div>
@@ -467,7 +510,7 @@
         </div>
 
         <!-- Tabela da Pré-Temporada -->
-        <div class="card">
+        <div id="comp-preseason-card" class="card">
           <div class="card-header">
             <h2 id="comp-preseason-title" class="card-title">Torneio de Pré-Temporada</h2>
           </div>
@@ -493,6 +536,9 @@
             </table>
           </div>
         </div>
+
+        <!-- Container Dinâmico para Competições Adicionais (Copas, Torneios Continentais) -->
+        <div id="extra-competitions-container"></div>
       </section>
 
     </div><!-- /#app-content -->

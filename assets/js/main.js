@@ -28,6 +28,27 @@
   let activeTab = "overview";
   let squadViewMode = "performance"; // "performance" | "contracts"
   let matchesVenueFilter = "all"; // "all" | "home" | "away"
+  let matchesResultFilter = "all"; // "all" | "win" | "draw" | "loss"
+  let selectedPitchFormation = "auto";
+
+  // Mapeamento de Roteamento por Hash (#visao-geral, #elenco, #partidas, #competicoes)
+  const TAB_HASH_MAP = {
+    "#visao-geral": "overview",
+    "#overview": "overview",
+    "#elenco": "squad",
+    "#squad": "squad",
+    "#partidas": "matches",
+    "#matches": "matches",
+    "#competicoes": "competitions",
+    "#competitions": "competitions"
+  };
+
+  const TAB_TO_HASH = {
+    overview: "#visao-geral",
+    squad: "#elenco",
+    matches: "#partidas",
+    competitions: "#competicoes"
+  };
 
   // Filtros de Elenco
   const squadFilters = {
@@ -126,12 +147,12 @@
     const errorMessageEl = document.getElementById("state-error-message");
     const appContent = document.getElementById("app-content");
 
-    if (loadingBanner) loadingBanner.style.display = state === APP_STATE.LOADING ? "flex" : "none";
-    if (errorBanner) {
+    if (loadingBanner && loadingBanner.style) loadingBanner.style.display = state === APP_STATE.LOADING ? "flex" : "none";
+    if (errorBanner && errorBanner.style) {
       errorBanner.style.display = state === APP_STATE.ERROR ? "flex" : "none";
       if (errorMessageEl && errorMessage) errorMessageEl.textContent = errorMessage;
     }
-    if (appContent) appContent.style.display = state === APP_STATE.LOADED ? "block" : "none";
+    if (appContent && appContent.style) appContent.style.display = state === APP_STATE.LOADED ? "block" : "none";
   }
 
   function processAndRender() {
@@ -548,6 +569,21 @@
       starters = [...squad].sort((a, b) => b.minutos - a.minutos).slice(0, 11);
     }
 
+    // Seletor de esquema tático interativo
+    const formationSelect = document.getElementById("select-pitch-formation");
+    if (formationSelect) {
+      selectedPitchFormation = formationSelect.value || "auto";
+      if (!formationSelect._listenerBound) {
+        formationSelect._listenerBound = true;
+        if (typeof formationSelect.addEventListener === "function") {
+          formationSelect.addEventListener("change", (e) => {
+            selectedPitchFormation = e.target.value;
+            renderTacticalPitch();
+          });
+        }
+      }
+    }
+
     // Métricas da prancheta
     const avgOvr = starters.length ? (starters.reduce((acc, p) => acc + (p.overall || 0), 0) / starters.length).toFixed(1) : "—";
     const avgAge = starters.length ? (starters.reduce((acc, p) => acc + (p.idade || 0), 0) / starters.length).toFixed(1) : "—";
@@ -559,12 +595,6 @@
     const midfielders = starters.filter(p => p.setor_canonico === "meio");
     const attackers = starters.filter(p => p.setor_canonico === "ataque");
 
-    const formationStr = `${defenders.length}-${midfielders.length}-${attackers.length}`;
-    setText("tactical-formation", formationStr);
-    setText("tactical-avg-ovr", avgOvr);
-    setText("tactical-avg-age", `${avgAge} anos`);
-    setText("tactical-starter-val", Domain.formatCurrency(starterVal));
-
     // Ordenação lateral tática das linhas
     const defOrder = { "LE": 1, "LBE": 2, "ZAG": 3, "DC": 4, "LBD": 5, "LD": 6 };
     defenders.sort((a, b) => (defOrder[a.posicao_principal] || 3) - (defOrder[b.posicao_principal] || 3));
@@ -574,6 +604,15 @@
 
     const attOrder = { "PE": 1, "PTE": 2, "SA": 3, "CA": 4, "ATA": 5, "PTD": 6, "PD": 7 };
     attackers.sort((a, b) => (attOrder[a.posicao_principal] || 4) - (attOrder[b.posicao_principal] || 4));
+
+    const autoFormationStr = `${defenders.length}-${midfielders.length}-${attackers.length}`;
+    const activeFormation = selectedPitchFormation === "auto" ? autoFormationStr : selectedPitchFormation;
+
+    setText("tactical-formation", activeFormation);
+    setText("xi-formation", activeFormation);
+    setText("tactical-avg-ovr", avgOvr);
+    setText("tactical-avg-age", `${avgAge} anos`);
+    setText("tactical-starter-val", Domain.formatCurrency(starterVal));
 
     // Distribuição no campo vertical (GOL embaixo -> ATA em cima)
     const tokens = [];
@@ -592,10 +631,37 @@
       }
     }
 
-    layoutRow(goalkeepers, 88);
-    layoutRow(defenders, 68);
-    layoutRow(midfielders, 46);
-    layoutRow(attackers, 20);
+    const outfielders = [...defenders, ...midfielders, ...attackers];
+    const gk = goalkeepers[0] || starters[0];
+    if (gk) {
+      tokens.push({ player: gk, x: 50, y: 88 });
+    }
+
+    if (selectedPitchFormation === "4-3-3" && outfielders.length >= 10) {
+      layoutRow(outfielders.slice(0, 4), 68);
+      layoutRow(outfielders.slice(4, 7), 46);
+      layoutRow(outfielders.slice(7, 10), 20);
+    } else if (selectedPitchFormation === "4-2-3-1" && outfielders.length >= 10) {
+      layoutRow(outfielders.slice(0, 4), 70);
+      layoutRow(outfielders.slice(4, 6), 54);
+      layoutRow(outfielders.slice(6, 9), 36);
+      layoutRow(outfielders.slice(9, 10), 18);
+    } else if (selectedPitchFormation === "4-4-2" && outfielders.length >= 10) {
+      layoutRow(outfielders.slice(0, 4), 70);
+      layoutRow(outfielders.slice(4, 8), 46);
+      layoutRow(outfielders.slice(8, 10), 20);
+    } else if (selectedPitchFormation === "3-5-2" && outfielders.length >= 10) {
+      layoutRow(outfielders.slice(0, 3), 72);
+      layoutRow(outfielders.slice(3, 8), 46);
+      layoutRow(outfielders.slice(8, 10), 20);
+    } else {
+      // Auto / esquema natural
+      tokens.length = 0; // reset to avoid duplicate gk
+      layoutRow(goalkeepers, 88);
+      layoutRow(defenders, 68);
+      layoutRow(midfielders, 46);
+      layoutRow(attackers, 20);
+    }
 
     pitch.innerHTML = tokens.map(({ player, x, y }) => {
       const sector = player.setor_canonico || "meio";
@@ -816,6 +882,42 @@
       });
     }
 
+    if (matchesResultFilter !== "all") {
+      filtered = filtered.filter(m => {
+        const meta = Domain.getResultMeta(m.resultado_canonico);
+        return meta.css === matchesResultFilter;
+      });
+    }
+
+    // Recalcular métricas para a barra de resumo analítico
+    const totalFiltered = filtered.length;
+    let wins = 0;
+    let draws = 0;
+    let losses = 0;
+    let gp = 0;
+    let gc = 0;
+
+    filtered.forEach(m => {
+      const meta = Domain.getResultMeta(m.resultado_canonico);
+      if (meta.css === "win") wins++;
+      else if (meta.css === "loss") losses++;
+      else draws++;
+
+      gp += Number(m.gols_pro || 0);
+      gc += Number(m.gols_contra || 0);
+    });
+
+    const sg = gp - gc;
+    const sgStr = (sg >= 0 ? "+" : "") + sg;
+    const maxPts = totalFiltered * 3;
+    const pts = wins * 3 + draws * 1;
+    const pct = maxPts > 0 ? ((pts / maxPts) * 100).toFixed(1) + "%" : "0.0%";
+
+    setText("summary-filtered-count", String(totalFiltered));
+    setText("summary-filtered-record", `${wins}V · ${draws}E · ${losses}D`);
+    setText("summary-filtered-goals", `${gp} GP / ${gc} GC (${sgStr} SG)`);
+    setText("summary-filtered-pct", pct);
+
     if (filtered.length === 0) {
       container.innerHTML = `<p style="color:var(--text-muted); padding:16px;">Nenhuma partida encontrada para os filtros selecionados.</p>`;
       return;
@@ -926,7 +1028,66 @@
     setText("comp-preseason-title", `${preTitle} (Fase Final)`);
 
     renderStandingsTable("laliga2-table-body", standings.laliga2 || []);
-    renderStandingsTable("preseason-table-body", standings.preseason || []);
+
+    const preseasonCard = document.getElementById("comp-preseason-card");
+    const preseasonRows = standings.preseason || [];
+    if (preseasonCard) {
+      if (preseasonRows.length === 0) {
+        preseasonCard.hidden = true;
+        if (preseasonCard.style) preseasonCard.style.display = "none";
+      } else {
+        preseasonCard.hidden = false;
+        if (preseasonCard.style) preseasonCard.style.display = "";
+        renderStandingsTable("preseason-table-body", preseasonRows);
+      }
+    } else {
+      renderStandingsTable("preseason-table-body", preseasonRows);
+    }
+
+    // Suporte a competições extras dinâmicas (ex: Copa Nacional, Torneios Continentais)
+    const extraContainer = document.getElementById("extra-competitions-container");
+    if (extraContainer) {
+      const knownKeys = new Set(["laliga2", "preseason"]);
+      const extraKeys = Object.keys(standings).filter(k => !knownKeys.has(k) && !k.startsWith("_") && Array.isArray(standings[k]) && standings[k].length > 0);
+      if (extraKeys.length > 0) {
+        extraContainer.innerHTML = extraKeys.map(k => {
+          const title = k.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
+          const tbodyId = `extra-comp-${k}-tbody`;
+          return `
+            <div class="card" style="margin-top: 20px;">
+              <div class="card-header">
+                <h2 class="card-title">${Domain.escapeHtml(title)}</h2>
+              </div>
+              <div class="table-responsive">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th class="cell-num">Pos</th>
+                      <th>Clube</th>
+                      <th class="cell-num">PTS</th>
+                      <th class="cell-num">J</th>
+                      <th class="cell-num">V</th>
+                      <th class="cell-num">E</th>
+                      <th class="cell-num">D</th>
+                      <th class="cell-num">GP</th>
+                      <th class="cell-num">GC</th>
+                      <th class="cell-num">SG</th>
+                    </tr>
+                  </thead>
+                  <tbody id="${tbodyId}"></tbody>
+                </table>
+              </div>
+            </div>
+          `;
+        }).join("");
+
+        extraKeys.forEach(k => {
+          renderStandingsTable(`extra-comp-${k}-tbody`, standings[k]);
+        });
+      } else {
+        extraContainer.innerHTML = "";
+      }
+    }
   }
 
   function renderStandingsTable(tbodyId, tableRows) {
@@ -940,15 +1101,26 @@
 
     const club = normalizedData.club || {};
     const clubKey = (club.nome || "").toLowerCase().split(" ")[0];
+    const total = tableRows.length;
 
-    tbody.innerHTML = tableRows.map(row => {
+    tbody.innerHTML = tableRows.map((row, idx) => {
       const rowName = (row.nome_time || row.time || "").toLowerCase();
       const isOurClub = Boolean(clubKey && rowName.includes(clubKey));
-      const rowStyle = isOurClub ? "background-color: var(--brand-cyan-muted); font-weight:700;" : "";
+      const rowClass = isOurClub ? "row-active-club" : "";
+      const pos = Number(row.posicao || row.pos || (idx + 1));
+
+      let zoneClass = "";
+      if (pos <= 2) {
+        zoneClass = "zone-promotion";
+      } else if (pos >= 3 && pos <= 6) {
+        zoneClass = "zone-playoffs";
+      } else if (total > 6 && pos > total - 4) {
+        zoneClass = "zone-relegation";
+      }
 
       return `
-        <tr style="${rowStyle}">
-          <td class="cell-num cell-bold">${row.posicao || "-"}</td>
+        <tr class="${rowClass}">
+          <td class="cell-num"><span class="pos-badge ${zoneClass}">${pos}</span></td>
           <td><strong>${Domain.escapeHtml(row.nome_time || row.time || "-")}</strong></td>
           <td class="cell-num cell-bold" style="color:var(--brand-cyan);">${row.pontos || 0}</td>
           <td class="cell-num">${row.jogos || 0}</td>
@@ -980,7 +1152,7 @@
       }
       if (footerStatus) {
         footerStatus.textContent = `Status: ${failedCount} Inconsistência(s) Detectada(s)`;
-        footerStatus.style.color = "var(--sports-loss)";
+        if (footerStatus.style) footerStatus.style.color = "var(--sports-loss)";
       }
     } else {
       if (statusBadge) {
@@ -989,7 +1161,7 @@
       }
       if (footerStatus) {
         footerStatus.textContent = "Status: Dados Sincronizados";
-        footerStatus.style.color = "var(--sports-win)";
+        if (footerStatus.style) footerStatus.style.color = "var(--sports-win)";
       }
     }
   }
@@ -1011,7 +1183,7 @@
             }).join("");
           }
           const saveWrap = document.getElementById("save-selector-wrap");
-          if (saveWrap) saveWrap.style.display = "flex";
+          if (saveWrap && saveWrap.style) saveWrap.style.display = "flex";
         }
       }
     } catch (e) {
@@ -1270,22 +1442,68 @@
   // ==========================================================================
   // EVENT LISTENERS & INTERATIVIDADE
   // ==========================================================================
+  function switchTab(targetTab, updateHash = true) {
+    if (!targetTab) return;
+    const tabButtons = document.querySelectorAll(".tab-btn");
+    const tabPanes = document.querySelectorAll(".tab-pane");
+
+    tabButtons.forEach(b => {
+      if (b.getAttribute("data-tab") === targetTab) {
+        b.classList.add("active");
+      } else {
+        b.classList.remove("active");
+      }
+    });
+
+    tabPanes.forEach(p => {
+      if (p.id === `tab-${targetTab}`) {
+        p.classList.add("active");
+      } else {
+        p.classList.remove("active");
+      }
+    });
+
+    activeTab = targetTab;
+
+    if (updateHash) {
+      const targetHash = TAB_TO_HASH[targetTab] || `#${targetTab}`;
+      if (window.location.hash !== targetHash) {
+        if (window.history && window.history.replaceState) {
+          window.history.replaceState(null, "", targetHash);
+        } else {
+          window.location.hash = targetHash;
+        }
+      }
+    }
+  }
+
   function setupTabNavigation() {
     const tabButtons = document.querySelectorAll(".tab-btn");
     tabButtons.forEach(btn => {
       btn.addEventListener("click", () => {
         const targetTab = btn.getAttribute("data-tab");
-        if (!targetTab) return;
-
-        tabButtons.forEach(b => b.classList.remove("active"));
-        document.querySelectorAll(".tab-pane").forEach(p => p.classList.remove("active"));
-
-        btn.classList.add("active");
-        const targetPane = document.getElementById(`tab-${targetTab}`);
-        if (targetPane) targetPane.classList.add("active");
-        activeTab = targetTab;
+        if (targetTab) {
+          switchTab(targetTab, true);
+        }
       });
     });
+
+    // Hash routing: escutar mudanças de hash no navegador (#visao-geral, #elenco, etc.)
+    if (typeof window.addEventListener === "function") {
+      window.addEventListener("hashchange", () => {
+        const currentHash = (window.location.hash || "").toLowerCase();
+        const mappedTab = TAB_HASH_MAP[currentHash];
+        if (mappedTab && mappedTab !== activeTab) {
+          switchTab(mappedTab, false);
+        }
+      });
+    }
+
+    // Verificar hash inicial ao carregar a página
+    const initialHash = (window.location && window.location.hash ? window.location.hash : "").toLowerCase();
+    if (initialHash && TAB_HASH_MAP[initialHash]) {
+      switchTab(TAB_HASH_MAP[initialHash], false);
+    }
   }
 
   function setupModals() {
@@ -1397,6 +1615,40 @@
       });
     }
 
+    const matchesResult = document.getElementById("matches-result-filter");
+    if (matchesResult) {
+      matchesResult.addEventListener("change", e => {
+        matchesResultFilter = e.target.value;
+        renderMatchesGrid();
+      });
+    }
+
+    // Ação: Enviar Arquivo de Save para Análise
+    const inputUpload = document.getElementById("input-save-upload");
+    if (inputUpload) {
+      inputUpload.addEventListener("change", e => {
+        const file = e.target.files && e.target.files[0];
+        if (file) {
+          handleSaveFileUpload(file);
+          inputUpload.value = "";
+        }
+      });
+    }
+
+    // Suporte a Arrastar e Soltar (Drag & Drop) do arquivo de save diretamente na página
+    if (typeof window.addEventListener === "function") {
+      window.addEventListener("dragover", e => {
+        if (e && e.preventDefault) e.preventDefault();
+      });
+      window.addEventListener("drop", e => {
+        if (e && e.preventDefault) e.preventDefault();
+        const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (file) {
+          handleSaveFileUpload(file);
+        }
+      });
+    }
+
     // Ação: Sincronizar Save
     const btnReload = document.getElementById("btn-reload-save");
     if (btnReload) {
@@ -1494,6 +1746,87 @@
     }, 4500);
   }
 
+  // ==========================================================================
+  // PROCESSAMENTO DE UPLOAD DE SAVE (CLIENT-SIDE & SERVIDOR LOCAL)
+  // ==========================================================================
+  async function handleSaveFileUpload(file) {
+    if (!file) return;
+
+    const fileNameLower = (file.name || "").toLowerCase();
+    const isJsonOrJs = fileNameLower.endsWith(".json") || fileNameLower.endsWith(".js") || (file.type && (file.type.includes("json") || file.type.includes("javascript")));
+
+    if (isJsonOrJs) {
+      // Processamento em tempo real no próprio navegador (funciona 100% no GitHub Pages e no servidor local)
+      try {
+        showToast(`Analisando arquivo "${file.name}"...`, "info");
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          try {
+            const text = event.target.result;
+            let parsed = null;
+            if (fileNameLower.endsWith(".js") || text.includes("FALLBACK_CAREER_DATA")) {
+              const match = text.match(/window\.FALLBACK_CAREER_DATA\s*=\s*(\{[\s\S]*\});?/);
+              if (match) {
+                parsed = JSON.parse(match[1]);
+              } else {
+                parsed = JSON.parse(text);
+              }
+            } else {
+              parsed = JSON.parse(text);
+            }
+
+            if (!parsed || typeof parsed !== "object") {
+              throw new Error("Conteúdo JSON vazio ou inválido.");
+            }
+
+            rawData = parsed;
+            processAndRender();
+            setText("current-save-name", file.name);
+            showToast(`Save "${file.name}" analisado e carregado com sucesso!`, "success");
+          } catch (parseErr) {
+            console.error("Erro ao analisar arquivo:", parseErr);
+            showToast("Estrutura do arquivo inválida. Forneça um save JSON válido.", "error");
+          }
+        };
+        reader.readAsText(file);
+      } catch (err) {
+        console.error("Erro na leitura do arquivo:", err);
+        showToast("Erro ao abrir arquivo de save.", "error");
+      }
+    } else {
+      // Arquivo binário de save do EA FC 26
+      if (isLocalServer) {
+        try {
+          showToast(`Enviando save binário "${file.name}" ao servidor para decodificação...`, "info");
+          const resp = await fetch("/api/upload", {
+            method: "POST",
+            headers: {
+              "X-Filename": file.name,
+              "Content-Type": "application/octet-stream"
+            },
+            body: file
+          });
+          if (resp.ok) {
+            const json = await resp.json();
+            rawData = json;
+            processAndRender();
+            loadAvailableSaves();
+            setText("current-save-name", file.name);
+            showToast(`Save binário "${file.name}" processado com sucesso pelo parser!`, "success");
+          } else {
+            const err = await resp.json().catch(() => ({}));
+            showToast(err.error || "Falha ao processar arquivo binário de save no servidor.", "error");
+          }
+        } catch (err) {
+          console.error("Erro ao enviar save:", err);
+          showToast("Erro de comunicação ao enviar arquivo de save.", "error");
+        }
+      } else {
+        showToast("No ambiente web estático, envie o arquivo career_data.json exportado ou execute 'python -m src.app' para ler saves binários do FC 26.", "warning");
+      }
+    }
+  }
+
   // Expor API global
   window.TrackerApp = {
     openPlayerModal,
@@ -1507,6 +1840,16 @@
     setSquadViewMode: mode => {
       squadViewMode = mode;
       renderSquadTab();
+    },
+    switchTab,
+    handleSaveFileUpload,
+    setPitchFormation: form => {
+      selectedPitchFormation = form;
+      renderTacticalPitch();
+    },
+    setMatchesResultFilter: filter => {
+      matchesResultFilter = filter;
+      renderMatchesGrid();
     }
   };
 

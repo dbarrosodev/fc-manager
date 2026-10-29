@@ -967,6 +967,134 @@ class TestUISportsAnalyticsRefactor(unittest.TestCase):
         self.assertIn("var(--border-color)", css)
         self.assertIn('[aria-selected="true"]', css)
 
+    # -------------------------------------------------------------------------
+    # CENÁRIO 57: Upload de Save e Preservação de Recursos Existentes
+    # -------------------------------------------------------------------------
+    def test_57_save_upload_and_zero_removal(self):
+        """Verifica presença do upload de save sem remover controles de exportação ou sincronização."""
+        with open(self.css_path, "r", encoding="utf-8") as f:
+            css = f.read()
+        with open(self.main_js_path, "r", encoding="utf-8") as f:
+            js = f.read()
+
+        # 1. Elementos de upload presentes no HTML
+        self.assertIn('id="btn-upload-label"', self.index_html)
+        self.assertIn('id="input-save-upload"', self.index_html)
+        self.assertIn('for="input-save-upload"', self.index_html)
+
+        # 2. Preservação estrita dos controles existentes (Zero-Removal)
+        self.assertIn('id="btn-reload-save"', self.index_html)
+        self.assertIn('id="select-save-file"', self.index_html)
+        self.assertIn('id="btn-apply-save"', self.index_html)
+        self.assertIn('id="btn-export-xlsx"', self.index_html)
+        self.assertIn('id="btn-export-csv"', self.index_html)
+
+        # 3. Estilização do botão de upload
+        self.assertIn(".btn-upload-save", css)
+
+        # 4. Lógica de processamento de save no JS
+        self.assertIn("handleSaveFileUpload", js)
+        self.assertIn("input-save-upload", js)
+
+    # -------------------------------------------------------------------------
+    # CENÁRIO 58: Formação Dinâmica no Campinho Tático (XI Tático)
+    # -------------------------------------------------------------------------
+    def test_58_tactical_pitch_dynamic_formation(self):
+        """Verifica dedução e seletor interativo de formações no campinho tático."""
+        with open(self.main_js_path, "r", encoding="utf-8") as f:
+            js = f.read()
+        with open(self.css_path, "r", encoding="utf-8") as f:
+            css = f.read()
+
+        # 1. Elementos de formação no HTML
+        self.assertIn('id="xi-formation"', self.index_html)
+        self.assertIn('id="tactical-formation"', self.index_html)
+        self.assertIn('id="select-pitch-formation"', self.index_html)
+
+        # 2. Suporte a esquemas táticos
+        self.assertIn('value="auto"', self.index_html)
+        self.assertIn('value="4-3-3"', self.index_html)
+        self.assertIn('value="4-2-3-1"', self.index_html)
+        self.assertIn('value="4-4-2"', self.index_html)
+        self.assertIn('value="3-5-2"', self.index_html)
+
+        # 3. CSS do seletor
+        self.assertIn(".pitch-formation-picker", css)
+        self.assertIn(".pitch-formation-select", css)
+
+        # 4. Reposicionamento dinâmico no JS
+        self.assertIn("selectedPitchFormation", js)
+
+    # -------------------------------------------------------------------------
+    # CENÁRIO 59: Zonas de Classificação e Dinamismo na Aba Competições
+    # -------------------------------------------------------------------------
+    def test_59_standings_zones_and_dynamism(self):
+        """Verifica indicadores de zona, destaque do clube ativo e suporte a competições extras."""
+        with open(self.css_path, "r", encoding="utf-8") as f:
+            css = f.read()
+        with open(self.main_js_path, "r", encoding="utf-8") as f:
+            js = f.read()
+
+        # 1. Regras de CSS das zonas e clube ativo
+        self.assertIn(".pos-badge", css)
+        self.assertIn(".zone-promotion", css)
+        self.assertIn(".zone-playoffs", css)
+        self.assertIn(".zone-relegation", css)
+        self.assertIn(".row-active-club", css)
+
+        # 2. Containers no HTML
+        self.assertIn('id="comp-preseason-card"', self.index_html)
+        self.assertIn('id="extra-competitions-container"', self.index_html)
+
+        # 3. Ocultação automática de pré-temporada vazia e competições extras no JS
+        self.assertIn("comp-preseason-card", js)
+        self.assertIn("extra-competitions-container", js)
+
+    # -------------------------------------------------------------------------
+    # CENÁRIO 60: Resumo Analítico Reativo no Calendário de Partidas
+    # -------------------------------------------------------------------------
+    def test_60_matches_reactive_filter_and_summary(self):
+        """Verifica filtro de resultado e barra de resumo recalculada em tempo real."""
+        with open(self.css_path, "r", encoding="utf-8") as f:
+            css = f.read()
+        with open(self.main_js_path, "r", encoding="utf-8") as f:
+            js = f.read()
+
+        # 1. Elementos no HTML
+        self.assertIn('id="matches-result-filter"', self.index_html)
+        self.assertIn('id="matches-filter-summary"', self.index_html)
+        self.assertIn('id="summary-filtered-count"', self.index_html)
+        self.assertIn('id="summary-filtered-record"', self.index_html)
+        self.assertIn('id="summary-filtered-goals"', self.index_html)
+        self.assertIn('id="summary-filtered-pct"', self.index_html)
+
+        # 2. Estilização da barra de resumo
+        self.assertIn(".filter-summary-bar", css)
+        self.assertIn(".summary-item", css)
+
+        # 3. Recálculo reativo no JS
+        self.assertIn("matchesResultFilter", js)
+        self.assertIn("summary-filtered-count", js)
+        self.assertIn("summary-filtered-record", js)
+        self.assertIn("summary-filtered-goals", js)
+        self.assertIn("summary-filtered-pct", js)
+
+    # -------------------------------------------------------------------------
+    # CENÁRIO 61: Persistência de Aba na URL (Hash Routing)
+    # -------------------------------------------------------------------------
+    def test_61_hash_routing_persistence(self):
+        """Verifica mapeamento de rotas por hash (#visao-geral, #elenco, #partidas, #competicoes)."""
+        with open(self.main_js_path, "r", encoding="utf-8") as f:
+            js = f.read()
+
+        self.assertIn("#visao-geral", js)
+        self.assertIn("#elenco", js)
+        self.assertIn("#partidas", js)
+        self.assertIn("#competicoes", js)
+        self.assertIn("TAB_HASH_MAP", js)
+        self.assertIn("TAB_TO_HASH", js)
+        self.assertIn("switchTab", js)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

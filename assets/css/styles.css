@@ -2060,3 +2060,134 @@ th,
     background-color: var(--bg-surface-hover);
   }
 }
+
+/* ==========================================================================
+   MELHORIAS DE ANÁLISE: UPLOAD DE SAVE, FORMAÇÃO DINÂMICA, ZONAS E RESUMO
+   ========================================================================== */
+
+/* Botão de Envio de Save */
+.btn-upload-save {
+  background: rgba(56, 189, 248, 0.12);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.btn-upload-save:hover,
+.btn-upload-save:focus-visible {
+  background: rgba(56, 189, 248, 0.22);
+  border-color: #38bdf8;
+  color: #ffffff;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.25);
+}
+
+/* Seletor de Formação Tática no Campinho */
+.pitch-formation-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pitch-formation-select {
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  height: 26px;
+  border-radius: 6px;
+  background-color: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: var(--brand-cyan, #38bdf8);
+  cursor: pointer;
+}
+
+.pitch-formation-select:hover,
+.pitch-formation-select:focus {
+  border-color: var(--brand-cyan, #38bdf8);
+}
+
+/* Barra de Resumo Analítico das Partidas Filtradas */
+.filter-summary-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-md, 8px);
+  font-variant-numeric: tabular-nums;
+}
+
+.filter-summary-bar .summary-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.filter-summary-bar .summary-label {
+  color: var(--text-muted, #94a3b8);
+  text-transform: uppercase;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.filter-summary-bar .summary-val {
+  color: #ffffff;
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+
+/* Zonas de Classificação nas Tabelas de Competições */
+.pos-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 22px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-weight: 800;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  border-left: 3px solid transparent;
+}
+
+.pos-badge.zone-promotion {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border-left-color: #10b981;
+}
+
+.pos-badge.zone-playoffs {
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+  border-left-color: #3b82f6;
+}
+
+.pos-badge.zone-relegation {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border-left-color: #ef4444;
+}
+
+/* Destaque do Clube Ativo na Classificação */
+.data-table tr.row-active-club {
+  background-color: rgba(59, 130, 246, 0.12) !important;
+  font-weight: 700;
+}
+
+.data-table tr.row-active-club td:first-child {
+  border-left: 3px solid #38bdf8;
+}
+
+.data-table tr.row-active-club td {
+  color: #ffffff;
+}

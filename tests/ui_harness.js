@@ -72,6 +72,8 @@ const sandbox = {
   fetch: () => Promise.reject(new Error("offline (harness)")),
   location: { reload() {}, href: "http://localhost/" },
   localStorage: { getItem() { return null; }, setItem() {} },
+  addEventListener(evt, fn) { (domListeners[evt] = domListeners[evt] || []).push(fn); },
+  removeEventListener() {},
   FALLBACK_CAREER_DATA: data
 };
 sandbox.window = sandbox;
