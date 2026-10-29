@@ -722,6 +722,155 @@
     return best;
   }
 
+  // ==========================================================================
+  // ESCUDOS DE CLUBES E MINIFACES DOS JOGADORES (ASSETS VISUAIS)
+  // ==========================================================================
+
+  const TEAM_CREST_MAP = {
+    "fc andorra": 114554,
+    "andorra": 114554,
+    "sd eibar": 467,
+    "eibar": 467,
+    "real zaragoza": 244,
+    "zaragoza": 244,
+    "ud las palmas": 472,
+    "las palmas": 472,
+    "burgos cf": 10846,
+    "burgos": 10846,
+    "cd mirandés": 110069,
+    "cd mirandes": 110069,
+    "mirandés": 110069,
+    "mirandes": 110069,
+    "córdoba cf": 1867,
+    "cordoba cf": 1867,
+    "córdoba": 1867,
+    "cordoba": 1867,
+    "fortuna sittard": 634,
+    "fortuna": 634,
+    "aberdeen": 77,
+    "estrela da amadora": 718,
+    "estrela": 718,
+    "racing de santander": 456,
+    "racing santander": 456,
+    "racing": 456,
+    "albacete balompié": 1854,
+    "albacete balompie": 1854,
+    "albacete": 1854,
+    "cd castellón": 100852,
+    "cd castellon": 100852,
+    "castellón": 100852,
+    "castellon": 100852,
+    "cd leganés": 100888,
+    "cd leganes": 100888,
+    "leganés": 100888,
+    "leganes": 100888,
+    "cádiz cf": 1968,
+    "cadiz cf": 1968,
+    "cádiz": 1968,
+    "cadiz": 1968,
+    "granada cf": 110832,
+    "granada": 110832,
+    "málaga cf": 573,
+    "malaga cf": 573,
+    "málaga": 573,
+    "malaga": 573,
+    "rc deportivo": 242,
+    "deportivo": 242,
+    "deportivo la coruña": 242,
+    "real sociedad b": 110711,
+    "real sporting de gijón": 459,
+    "real sporting de gijon": 459,
+    "real sporting": 459,
+    "sporting de gijón": 459,
+    "sporting de gijon": 459,
+    "sporting gijon": 459,
+    "real valladolid": 462,
+    "valladolid": 462,
+    "sd huesca": 110839,
+    "huesca": 110839,
+    "ud almería": 1861,
+    "ud almeria": 1861,
+    "almería": 1861,
+    "almeria": 1861,
+    "ad ceuta": 1894,
+    "ceuta": 1894,
+    "cultural leonesa": 15012,
+    "leonesa": 15012,
+    "cagliari": 1842,
+    "genoa": 110556,
+    "udinese": 55,
+    "avs futebol sad": 131463,
+    "avs": 131463
+  };
+
+  function getTeamAbbreviation(name) {
+    if (!name) return "FC";
+    const clean = String(name).trim();
+    const parts = clean.split(/\s+/).filter(p => !["de", "da", "do", "la", "el", "del", "e"].includes(p.toLowerCase()));
+    if (parts.length >= 3) {
+      return (parts[0][0] + parts[1][0] + parts[2][0]).toUpperCase();
+    }
+    if (parts.length === 2) {
+      if (parts[0].length >= 2) {
+        return (parts[0].slice(0, 2) + parts[1][0]).toUpperCase();
+      }
+      return (parts[0][0] + parts[1].slice(0, 2)).toUpperCase();
+    }
+    return clean.slice(0, 3).toUpperCase();
+  }
+
+  function renderTeamCrest(teamName, teamId, size) {
+    const s = size || "md";
+    const name = String(teamName || "").trim();
+    let resolvedId = Number(teamId) || 0;
+    if (!resolvedId && name) {
+      const lower = name.toLowerCase();
+      resolvedId = TEAM_CREST_MAP[lower] || 0;
+      if (!resolvedId) {
+        const unaccented = lower.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        resolvedId = TEAM_CREST_MAP[unaccented] || 0;
+      }
+      if (!resolvedId) {
+        for (const [k, v] of Object.entries(TEAM_CREST_MAP)) {
+          if (lower.includes(k) || k.includes(lower)) {
+            resolvedId = v;
+            break;
+          }
+        }
+      }
+    }
+
+    const abbr = getTeamAbbreviation(name);
+    const safeName = escapeHtml(name || "Clube");
+
+    if (resolvedId > 0) {
+      const crestUrl = `https://cdn.sofifa.net/meta/team/${resolvedId}/120.png`;
+      return `<span class="team-crest-wrap team-crest-${s}" title="${safeName}"><img src="${crestUrl}" alt="${safeName}" class="team-crest-img" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null; this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-flex';" /><span class="team-crest-fallback" style="display:none;" aria-hidden="true"><i class="ph-duotone ph-shield"></i><span class="team-crest-abbr">${escapeHtml(abbr)}</span></span></span>`;
+    }
+
+    return `<span class="team-crest-wrap team-crest-${s}" title="${safeName}"><span class="team-crest-fallback" aria-hidden="true"><i class="ph-duotone ph-shield"></i><span class="team-crest-abbr">${escapeHtml(abbr)}</span></span></span>`;
+  }
+
+  function renderPlayerFace(player, size) {
+    const s = size || "md";
+    if (!player || typeof player !== "object") {
+      return `<span class="player-face-avatar player-face-${s}"><span class="player-face-fallback" aria-hidden="true"><i class="ph-duotone ph-user"></i></span></span>`;
+    }
+    const pid = Number(player.playerid || player.id || player.player_id) || 0;
+    const num = player.numero !== undefined ? player.numero : (player.number || "");
+    const name = escapeHtml(player.nome || player.name || "Jogador");
+
+    if (pid > 0 && pid <= 280000) {
+      const idStr = String(pid).padStart(6, "0");
+      const primaryUrl = `https://cdn.sofifa.net/players/${idStr.slice(0, 3)}/${idStr.slice(3, 6)}/26_120.png`;
+      const fallbackUrl = `https://cdn.sofifa.net/players/${idStr.slice(0, 3)}/${idStr.slice(3, 6)}/25_120.png`;
+
+      return `<span class="player-face-avatar player-face-${s}" title="${name}"><img src="${primaryUrl}" alt="${name}" class="player-face-img" loading="lazy" referrerpolicy="no-referrer" data-fallback-url="${fallbackUrl}" onerror="if(this.dataset.fallbackUrl && !this.dataset.tried){ this.dataset.tried='1'; this.src=this.dataset.fallbackUrl; } else { this.onerror=null; this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-flex'; }" /><span class="player-face-fallback" style="display:none;" aria-hidden="true"><i class="ph-duotone ph-user"></i>${num ? `<span class="player-face-num">${escapeHtml(String(num))}</span>` : ""}</span></span>`;
+    }
+
+    return `<span class="player-face-avatar player-face-${s}" title="${name}"><span class="player-face-fallback" aria-hidden="true"><i class="ph-duotone ph-user"></i>${num ? `<span class="player-face-num">${escapeHtml(String(num))}</span>` : ""}</span></span>`;
+  }
+
   return {
     normalizeCompetitionName: normalizeCompetitionName,
     normalizePlayerData: normalizePlayerData,
@@ -740,6 +889,12 @@
     formatPercent: formatPercent,
     formatRating: formatRating,
     getRatingBadgeClass: getRatingBadgeClass,
-    getManOfTheMatch: getManOfTheMatch
+    getManOfTheMatch: getManOfTheMatch,
+    TEAM_CREST_MAP: TEAM_CREST_MAP,
+    getTeamAbbreviation: getTeamAbbreviation,
+    renderTeamCrest: renderTeamCrest,
+    getTeamCrestHtml: renderTeamCrest,
+    renderPlayerFace: renderPlayerFace,
+    getPlayerFaceHtml: renderPlayerFace
   };
 });

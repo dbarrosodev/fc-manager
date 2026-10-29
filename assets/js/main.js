@@ -362,11 +362,9 @@
     const squad = (normalizedData && normalizedData.squad) || [];
 
     setText("club-crest", getInitials(club.nome));
-    if (club.logoUrl) {
-      const crestEl = document.getElementById("club-crest");
-      if (crestEl) {
-        crestEl.innerHTML = `<img src="${Domain.escapeHtml(club.logoUrl)}" alt="${Domain.escapeHtml(club.nome || "Clube")}" class="club-crest-img">`;
-      }
+    const crestEl = document.getElementById("club-crest");
+    if (crestEl) {
+      crestEl.innerHTML = Domain.renderTeamCrest(club.nome, club.id || club.teamid, "lg");
     }
 
     setText("club-name", club.nome || "Clube");
@@ -447,6 +445,15 @@
       setText("hero-match-away", lastMatch.visitante);
       setText("hero-match-scorers", lastMatch.artilheiros || "Nenhum gol registrado");
 
+      const homeCrestEl = document.getElementById("hero-match-home-crest");
+      if (homeCrestEl) {
+        homeCrestEl.innerHTML = Domain.renderTeamCrest(lastMatch.mandante, lastMatch.mandante_id, "md");
+      }
+      const awayCrestEl = document.getElementById("hero-match-away-crest");
+      if (awayCrestEl) {
+        awayCrestEl.innerHTML = Domain.renderTeamCrest(lastMatch.visitante, lastMatch.visitante_id, "md");
+      }
+
       const heroBtn = document.getElementById("hero-match-btn");
       if (heroBtn) {
         heroBtn.onclick = () => openMatchModal(lastMatch.id);
@@ -484,7 +491,10 @@
       } else {
         scorersList.innerHTML = topScorers.map(p => `
           <li class="radar-item">
-            <span class="player-display-name" onclick="window.TrackerApp.openPlayerModal(${p.playerid})">${Domain.escapeHtml(p.nome)} <small style="color:var(--text-muted); font-weight:normal;">(${p.posicao_principal})</small></span>
+            <div class="radar-player-left">
+              ${Domain.renderPlayerFace(p, "sm")}
+              <span class="player-display-name" onclick="window.TrackerApp.openPlayerModal(${p.playerid})">${Domain.escapeHtml(p.nome)} <small style="color:var(--text-muted); font-weight:normal;">(${p.posicao_principal})</small></span>
+            </div>
             <strong style="color:var(--sports-win); font-family:var(--font-mono);">${p.gols} gols</strong>
           </li>
         `).join("");
@@ -504,7 +514,10 @@
       } else {
         assistsList.innerHTML = topAssists.map(p => `
           <li class="radar-item">
-            <span class="player-display-name" onclick="window.TrackerApp.openPlayerModal(${p.playerid})">${Domain.escapeHtml(p.nome)} <small style="color:var(--text-muted); font-weight:normal;">(${p.posicao_principal})</small></span>
+            <div class="radar-player-left">
+              ${Domain.renderPlayerFace(p, "sm")}
+              <span class="player-display-name" onclick="window.TrackerApp.openPlayerModal(${p.playerid})">${Domain.escapeHtml(p.nome)} <small style="color:var(--text-muted); font-weight:normal;">(${p.posicao_principal})</small></span>
+            </div>
             <strong style="color:var(--brand-cyan); font-family:var(--font-mono);">${p.assistencias} assists</strong>
           </li>
         `).join("");
@@ -524,7 +537,10 @@
       } else {
         ratingsList.innerHTML = topRatings.map(p => `
           <li class="radar-item">
-            <span class="player-display-name" onclick="window.TrackerApp.openPlayerModal(${p.playerid})">${Domain.escapeHtml(p.nome)} <small style="color:var(--text-muted); font-weight:normal;">(${p.posicao_principal})</small></span>
+            <div class="radar-player-left">
+              ${Domain.renderPlayerFace(p, "sm")}
+              <span class="player-display-name" onclick="window.TrackerApp.openPlayerModal(${p.playerid})">${Domain.escapeHtml(p.nome)} <small style="color:var(--text-muted); font-weight:normal;">(${p.posicao_principal})</small></span>
+            </div>
             <span class="rating-badge ${Domain.getRatingBadgeClass(p.nota_media)}">${Domain.formatRating(p.nota_media)}</span>
           </li>
         `).join("");
@@ -551,7 +567,10 @@
           }
           return `
             <li class="radar-item">
-              <span class="player-display-name" onclick="window.TrackerApp.openPlayerModal(${p.playerid})">${Domain.escapeHtml(p.nome)}</span>
+              <div class="radar-player-left">
+                ${Domain.renderPlayerFace(p, "sm")}
+                <span class="player-display-name" onclick="window.TrackerApp.openPlayerModal(${p.playerid})">${Domain.escapeHtml(p.nome)}</span>
+              </div>
               ${badge}
             </li>
           `;
@@ -683,15 +702,15 @@
       const sector = player.setor_canonico || "meio";
       const ratingClass = Domain.getRatingBadgeClass(player.nota_media);
       let statBadges = "";
-      if (player.gols > 0) statBadges += `<span class="pitch-stat-icon" title="${player.gols} gol(s)">⚽${player.gols}</span>`;
-      if (player.assistencias > 0) statBadges += `<span class="pitch-stat-icon" title="${player.assistencias} assistência(s)">👟${player.assistencias}</span>`;
+      if (player.gols > 0) statBadges += `<span class="pitch-stat-icon" title="${player.gols} gol(s)"><i class="ph-fill ph-soccer-ball"></i> ${player.gols}</span>`;
+      if (player.assistencias > 0) statBadges += `<span class="pitch-stat-icon" title="${player.assistencias} assistência(s)"><i class="ph-fill ph-sneaker-move"></i> ${player.assistencias}</span>`;
 
       return `
         <div class="pitch-player pitch-player-token ${sector}" style="top: ${y}%; left: ${x}%;" onclick="window.TrackerApp.openPlayerModal(${player.playerid})" title="${Domain.escapeHtml(player.nome)} (${Domain.escapeHtml(player.posicao_principal)})" tabindex="0" role="button" aria-label="Ver perfil de ${Domain.escapeHtml(player.nome)}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); window.TrackerApp.openPlayerModal(${player.playerid});}">
           <div class="pitch-avatar-wrap">
+            <span class="pitch-ovr-badge" title="Overall">${player.overall || "—"}</span>
             <div class="pitch-avatar">
-              <span class="pitch-avatar-num">${player.numero || "-"}</span>
-              <span class="pitch-avatar-ovr">${player.overall || "—"}</span>
+              ${Domain.renderPlayerFace(player, "pitch")}
             </div>
             <span class="pitch-rating-badge rating-badge ${ratingClass}" title="Nota Média">${Domain.formatRating(player.nota_media)}</span>
           </div>
@@ -799,7 +818,8 @@
             <td class="cell-num col-num"><span class="player-num-circle">${p.numero || "-"}</span></td>
             <td class="col-player">
               <div class="player-names-cell">
-                <div>
+                ${Domain.renderPlayerFace(p, "md")}
+                <div class="player-names-info">
                   <span class="player-display-name">${Domain.escapeHtml(p.nome)}</span>
                   <div class="player-meta-inline">${Domain.escapeHtml(p.nacionalidade || "")}</div>
                 </div>
@@ -846,7 +866,8 @@
             <td class="cell-num col-num"><span class="player-num-circle">${p.numero || "-"}</span></td>
             <td class="col-player">
               <div class="player-names-cell">
-                <div>
+                ${Domain.renderPlayerFace(p, "md")}
+                <div class="player-names-info">
                   <span class="player-display-name">${Domain.escapeHtml(p.nome)}</span>
                   ${secPosBadge}
                   <div class="player-meta-inline">${Domain.escapeHtml(p.nacionalidade || "")}</div>
@@ -948,7 +969,7 @@
       const motm = Domain.getManOfTheMatch(m);
       const motmHtml = motm ? `
         <div class="match-motm">
-          <span class="motm-label">★ Melhor em Campo:</span>
+          <span class="motm-label"><i class="ph-fill ph-star"></i> Melhor em Campo:</span>
           <span class="player-display-name" onclick="event.stopPropagation(); window.TrackerApp.openPlayerModal(${motm.playerid})">${Domain.escapeHtml(motm.nome)}</span>
           <span class="rating-badge ${Domain.getRatingBadgeClass(motm.nota)}">${Domain.formatRating(motm.nota)}</span>
         </div>
@@ -961,9 +982,15 @@
             <span class="badge badge-result ${resClass} result-badge">${Domain.escapeHtml(m.resultado)}</span>
           </div>
           <div class="match-card-teams match-teams-row">
-            <span class="match-team-name">${Domain.escapeHtml(m.mandante)}</span>
+            <div class="match-team-col home">
+              ${Domain.renderTeamCrest(m.mandante, m.mandante_id, 'sm')}
+              <span class="match-team-name">${Domain.escapeHtml(m.mandante)}</span>
+            </div>
             <span class="match-score-pill">${Domain.escapeHtml(formatScore(m, " - "))}</span>
-            <span class="match-team-name away">${Domain.escapeHtml(m.visitante)}</span>
+            <div class="match-team-col away">
+              <span class="match-team-name away">${Domain.escapeHtml(m.visitante)}</span>
+              ${Domain.renderTeamCrest(m.visitante, m.visitante_id, 'sm')}
+            </div>
           </div>
           <div class="match-card-info">
             <div><strong>Artilheiro(s):</strong> ${Domain.escapeHtml(m.artilheiros || "Nenhum")}</div>
@@ -1141,7 +1168,10 @@
       return `
         <tr class="${rowClass}">
           <td class="cell-num"><span class="pos-badge ${zoneClass}">${pos}</span></td>
-          <td><strong>${Domain.escapeHtml(row.nome_time || row.time || "-")}</strong></td>
+          <td class="standings-club-cell">
+            ${Domain.renderTeamCrest(row.nome_time || row.time, row.teamid || row.id, "sm")}
+            <strong>${Domain.escapeHtml(row.nome_time || row.time || "-")}</strong>
+          </td>
           <td class="cell-num cell-bold" style="color:var(--brand-cyan);">${row.pontos || 0}</td>
           <td class="cell-num">${row.jogos || 0}</td>
           <td class="cell-num">${row.vitorias || 0}</td>
@@ -1263,9 +1293,19 @@
     const isCompared = comparedPlayerIds.includes(player.playerid);
 
     body.innerHTML = `
-      <div style="display:flex; justify-content:flex-end; margin-bottom: 0.85rem;">
+      <div class="player-modal-profile">
+        ${Domain.renderPlayerFace(player, "lg")}
+        <div class="player-modal-profile-info">
+          <div class="player-modal-name">${Domain.escapeHtml(player.nome_completo || player.nome)}</div>
+          <div class="player-modal-tags">
+            <span class="badge badge-pos ${player.setor_canonico || 'meio'}">${Domain.escapeHtml(player.posicao_principal)}</span>
+            <span class="badge-ovr-pill">${player.overall} OVR</span>
+            <span class="player-modal-num">Camisa #${player.numero || '-'}</span>
+            <span class="player-modal-country">${Domain.escapeHtml(player.nacionalidade || "")}</span>
+          </div>
+        </div>
         <button type="button" class="btn-compare-action ${isCompared ? 'active' : ''}" data-playerid="${player.playerid}" onclick="window.TrackerApp.toggleComparePlayer(${player.playerid});">
-          ⇄ ${isCompared ? 'Remover da Comparação' : 'Comparar Atleta (Head-to-Head)'}
+          ⇄ ${isCompared ? 'Remover da Comparação' : 'Comparar Atleta'}
         </button>
       </div>
       <div class="metrics-per90-grid">
@@ -1416,7 +1456,7 @@
     const motm = Domain.getManOfTheMatch(match);
     const motmHighlight = motm ? `
       <div class="detail-row">
-        <span class="detail-label" style="color:#f59e0b;">★ Melhor em Campo</span>
+        <span class="detail-label" style="color:#f59e0b;"><i class="ph-fill ph-star"></i> Melhor em Campo</span>
         <span class="detail-val">
           <strong class="player-display-name" onclick="window.TrackerApp.openPlayerModal(${motm.playerid})">${Domain.escapeHtml(motm.nome)}</strong>
           <span class="rating-badge ${Domain.getRatingBadgeClass(motm.nota)}" style="margin-left:6px;">${Domain.formatRating(motm.nota)}</span>
@@ -1640,7 +1680,7 @@
     body.innerHTML = `
       <div class="compare-header">
         <div class="compare-card-player left">
-          <div class="compare-player-avatar">${p1.numero || p1.overall}</div>
+          ${Domain.renderPlayerFace(p1, "lg")}
           <div>
             <div class="compare-player-name">${Domain.escapeHtml(p1.nome)}</div>
             <div class="compare-player-meta">
@@ -1653,7 +1693,7 @@
         <div class="compare-vs-pill">VS</div>
 
         <div class="compare-card-player right">
-          <div class="compare-player-avatar">${p2.numero || p2.overall}</div>
+          ${Domain.renderPlayerFace(p2, "lg")}
           <div>
             <div class="compare-player-name">${Domain.escapeHtml(p2.nome)}</div>
             <div class="compare-player-meta">

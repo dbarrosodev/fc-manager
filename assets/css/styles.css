@@ -996,7 +996,26 @@ th,
   font-weight: 700;
   color: #ffffff;
   width: 40%;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.scoreboard-team.home {
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.scoreboard-team.away {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.scoreboard-team-crest {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .scoreboard-score {
@@ -1888,50 +1907,55 @@ th,
   transform: translate(-50%, -50%) scale(1.08);
 }
 
-/* Avatar Circular Centralizado com Número e OVR */
+/* Avatar Circular Centralizado com Miniface, OVR e Nota Média */
 .pitch-avatar-wrap {
   position: relative;
-  width: 42px;
-  height: 42px;
+  width: 44px;
+  height: 44px;
 }
 
 .pitch-avatar {
-  width: 42px;
-  height: 42px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   background: linear-gradient(135deg, #1b2838 0%, #0f1722 100%);
   border: 2px solid var(--border-medium);
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
   transition: border-color 0.2s, box-shadow 0.2s;
+  overflow: hidden;
 }
 
 .pitch-player.goleiro .pitch-avatar {
   border-color: #f59e0b;
-  background: radial-gradient(circle at 35% 35%, #422006 0%, #1e1103 100%);
 }
 
 .pitch-player.defesa .pitch-avatar {
   border-color: #3b82f6;
-  background: radial-gradient(circle at 35% 35%, #172554 0%, #0c1427 100%);
 }
 
 .pitch-player.meio .pitch-avatar {
   border-color: #10b981;
-  background: radial-gradient(circle at 35% 35%, #064e3b 0%, #032118 100%);
 }
 
 .pitch-player.ataque .pitch-avatar {
   border-color: #ef4444;
-  background: radial-gradient(circle at 35% 35%, #450a0a 0%, #1f0404 100%);
 }
 
 .pitch-player:hover .pitch-avatar,
 .pitch-player:focus-visible .pitch-avatar {
   box-shadow: 0 0 16px rgba(16, 185, 129, 0.45);
+}
+
+.pitch-avatar .player-face-avatar {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  box-shadow: none;
 }
 
 .pitch-avatar-num {
@@ -1951,11 +1975,31 @@ th,
   margin-top: 1px;
 }
 
+/* Badge Flutuante no Canto Superior Esquerdo com OVR */
+.pitch-ovr-badge {
+  position: absolute;
+  top: -4px;
+  left: -8px;
+  z-index: 5;
+  font-size: 9.5px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  color: var(--brand-cyan);
+  background: rgba(15, 23, 42, 0.95);
+  padding: 1px 4px;
+  border-radius: 6px;
+  line-height: 1.2;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  white-space: nowrap;
+}
+
 /* Badge Flutuante no Canto Superior Direito com a Nota Média (Padrão Sofascore) */
 .pitch-rating-badge {
   position: absolute;
   top: -4px;
   right: -8px;
+  z-index: 5;
   font-size: 9.5px;
   font-weight: 800;
   font-family: var(--font-mono);
@@ -2708,4 +2752,266 @@ th,
     justify-content: space-between;
     border-radius: 12px;
   }
+}
+
+/* ==========================================================================
+   PHOSPHOR ICONS & INTEGRAÇÃO DE ÍCONES SEMÂNTICOS
+   ========================================================================== */
+.btn i,
+.tab-btn i {
+  font-size: 1.15em;
+  vertical-align: middle;
+  line-height: 1;
+}
+
+.topbar-actions .btn i {
+  margin-right: 2px;
+}
+
+.motm-label i,
+.detail-label i {
+  font-size: 1.05em;
+  vertical-align: -1px;
+}
+
+/* ==========================================================================
+   ESCUDOS DOS CLUBES (TEAM CRESTS)
+   ========================================================================== */
+.team-crest-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.team-crest-sm {
+  width: 24px;
+  height: 24px;
+}
+
+.team-crest-md {
+  width: 36px;
+  height: 36px;
+}
+
+.team-crest-lg {
+  width: 56px;
+  height: 56px;
+}
+
+.team-crest-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.team-crest-fallback {
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.95));
+  border: 1px solid var(--border-color);
+  color: var(--brand-cyan);
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  position: relative;
+  font-family: var(--font-mono);
+  overflow: hidden;
+}
+
+.team-crest-fallback i {
+  font-size: 1.1em;
+  opacity: 0.85;
+}
+
+.team-crest-abbr {
+  font-size: 0.65em;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: #ffffff;
+  line-height: 1;
+  margin-top: 2px;
+}
+
+.team-crest-sm .team-crest-abbr {
+  display: none;
+}
+
+.team-crest-sm .team-crest-fallback i {
+  font-size: 0.85rem;
+}
+
+/* Célula do Clube nas Tabelas de Classificação */
+.standings-club-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Colunas dos Clubes nos Match Cards */
+.match-team-col {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.match-team-col.home {
+  justify-content: flex-start;
+}
+
+.match-team-col.away {
+  justify-content: flex-end;
+  text-align: right;
+}
+
+/* ==========================================================================
+   ROSTOS DOS JOGADORES (MINIFACES)
+   ========================================================================== */
+.player-face-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  border-radius: 50%;
+  flex-shrink: 0;
+  overflow: hidden;
+  background: radial-gradient(circle at 40% 40%, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.95));
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  vertical-align: middle;
+}
+
+.player-face-sm {
+  width: 28px;
+  height: 28px;
+}
+
+.player-face-md {
+  width: 32px;
+  height: 32px;
+}
+
+.player-face-pitch {
+  width: 44px;
+  height: 44px;
+}
+
+.player-face-lg {
+  width: 72px;
+  height: 72px;
+  border: 2px solid var(--border-medium);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+}
+
+.player-face-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+  display: block;
+}
+
+.player-face-fallback {
+  width: 100%;
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.player-face-fallback i {
+  font-size: 1.15em;
+}
+
+.player-face-num {
+  position: absolute;
+  bottom: 1px;
+  right: 1px;
+  font-size: 0.55em;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  color: #ffffff;
+  background: rgba(0, 0, 0, 0.7);
+  padding: 0 2px;
+  border-radius: 3px;
+  line-height: 1.1;
+}
+
+/* Info do Jogador na Tabela de Elenco */
+.player-names-info {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Item do Radar de Atenção com Miniface */
+.radar-player-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+/* Cabeçalho do Modal do Jogador (Featured Profile) */
+.player-modal-profile {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 1.25rem;
+  padding: 12px 16px;
+  background: var(--bg-surface);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  flex-wrap: wrap;
+}
+
+.player-modal-profile-info {
+  flex: 1;
+  min-width: 180px;
+}
+
+.player-modal-name {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: #ffffff;
+  line-height: 1.2;
+}
+
+.player-modal-tags {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.badge-ovr-pill {
+  font-family: var(--font-mono);
+  font-weight: 800;
+  color: var(--brand-cyan);
+  background: rgba(6, 182, 212, 0.12);
+  border: 1px solid rgba(6, 182, 212, 0.25);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.player-modal-num {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.player-modal-country {
+  color: var(--text-muted);
 }

@@ -6,6 +6,12 @@
   <title>FC Manager — EA FC 26 Career Tracker</title>
   <link rel="stylesheet" href="assets/css/styles.css">
 
+  <!-- Phosphor Icons (@phosphor-icons/web@2.1.1) -->
+  <link rel="stylesheet" type="text/css" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css" />
+  <link rel="stylesheet" type="text/css" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/bold/style.css" />
+  <link rel="stylesheet" type="text/css" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css" />
+  <link rel="stylesheet" type="text/css" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/duotone/style.css" />
+
   <!-- Camadas de dados para compatibilidade GitHub Pages estático e offline -->
   <script src="assets/data/career_data.js"></script>
   <script src="assets/js/domain.js"></script>
@@ -39,19 +45,20 @@
         </div>
 
         <button id="btn-reload-save" class="btn btn-sm" title="Recarregar dados do save local">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          <i class="ph-bold ph-arrows-clockwise" aria-hidden="true"></i>
           Sincronizar
         </button>
         <label id="btn-upload-label" for="input-save-upload" class="btn btn-sm btn-upload-save" title="Enviar arquivo de save CmMgr para análise">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <i class="ph-bold ph-upload-simple" aria-hidden="true"></i>
           Enviar Save (CmMgr)
         </label>
         <input type="file" id="input-save-upload" style="display:none;" aria-label="Enviar arquivo de save CmMgr">
         <a id="btn-export-xlsx" href="#" download class="btn btn-sm btn-success" title="Exportar Planilha Excel (.xlsx)">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <i class="ph-bold ph-file-xls" aria-hidden="true"></i>
           Excel (.xlsx)
         </a>
         <button id="btn-export-csv" class="btn btn-sm" title="Exportar Dados em CSV">
+          <i class="ph-bold ph-file-csv" aria-hidden="true"></i>
           CSV
         </button>
       </div>
@@ -151,19 +158,19 @@
       <!-- Navegação por Abas Principais (4 Abas) -->
       <nav class="tabs-nav" aria-label="Navegação da Carreira">
         <button class="tab-btn active" data-tab="overview">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          <i class="ph-duotone ph-squares-four" aria-hidden="true"></i>
           Visão Geral
         </button>
         <button class="tab-btn" data-tab="squad">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <i class="ph-duotone ph-users-three" aria-hidden="true"></i>
           Elenco <span id="squad-count-badge" class="tab-badge">0</span>
         </button>
         <button class="tab-btn" data-tab="matches">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+          <i class="ph-duotone ph-soccer-ball" aria-hidden="true"></i>
           Partidas & Atuações
         </button>
         <button class="tab-btn" data-tab="competitions">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>
+          <i class="ph-duotone ph-trophy" aria-hidden="true"></i>
           Competições
         </button>
       </nav>
@@ -182,9 +189,15 @@
                 <span id="hero-match-date-comp">—</span>
               </div>
               <div class="match-scoreboard">
-                <div id="hero-match-home" class="scoreboard-team">—</div>
+                <div class="scoreboard-team home">
+                  <span id="hero-match-home-crest" class="scoreboard-team-crest"></span>
+                  <span id="hero-match-home">—</span>
+                </div>
                 <div id="hero-match-score" class="scoreboard-score">—</div>
-                <div id="hero-match-away" class="scoreboard-team">—</div>
+                <div class="scoreboard-team away">
+                  <span id="hero-match-away">—</span>
+                  <span id="hero-match-away-crest" class="scoreboard-team-crest"></span>
+                </div>
               </div>
               <div class="match-hero-footer">
                 <div>
@@ -224,7 +237,7 @@
             <div id="tactical-board-section" class="tactical-board-card">
               <div class="board-header">
                 <div class="board-title-wrap">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 12h18"/><circle cx="12" cy="12" r="3"/></svg>
+                  <i class="ph-duotone ph-strategy" style="font-size:1.25rem; color:var(--brand-cyan);" aria-hidden="true"></i>
                   <h2 class="board-title">11 Titular Mais Utilizado (XI Tático)</h2>
                 </div>
                 <div class="board-metrics">

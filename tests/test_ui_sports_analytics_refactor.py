@@ -1274,6 +1274,137 @@ class TestUISportsAnalyticsRefactor(unittest.TestCase):
             self.assertEqual(data["club"]["gols_pro_temporada"], 19)
             self.assertEqual(data["validation_report"]["checks"][0]["status"], "OK (VERIFICADO)")
 
+    # -------------------------------------------------------------------------
+    # CENÁRIO 64: Phosphor Icons, Sistema de Escudos dos Clubes e Minifaces
+    # -------------------------------------------------------------------------
+    def test_64_phosphor_icons_crests_and_minifaces(self):
+        """Verifica integração do Phosphor Icons, gerador de escudos e minifaces de atletas."""
+        # 1. Links do Phosphor Icons no index.html
+        self.assertIn("@phosphor-icons/web@2.1.1/src/regular/style.css", self.index_html)
+        self.assertIn("@phosphor-icons/web@2.1.1/src/bold/style.css", self.index_html)
+        self.assertIn("@phosphor-icons/web@2.1.1/src/fill/style.css", self.index_html)
+        self.assertIn("@phosphor-icons/web@2.1.1/src/duotone/style.css", self.index_html)
+
+        # 2. Classes do Phosphor na navegação e botões
+        self.assertIn("ph-duotone ph-squares-four", self.index_html)
+        self.assertIn("ph-duotone ph-users-three", self.index_html)
+        self.assertIn("ph-duotone ph-soccer-ball", self.index_html)
+        self.assertIn("ph-duotone ph-trophy", self.index_html)
+        self.assertIn("ph-bold ph-arrows-clockwise", self.index_html)
+        self.assertIn("ph-bold ph-upload-simple", self.index_html)
+        self.assertIn("ph-bold ph-file-xls", self.index_html)
+        self.assertIn("ph-bold ph-file-csv", self.index_html)
+
+        # 3. CSS dos escudos e minifaces
+        with open(self.css_path, "r", encoding="utf-8") as f:
+            css = f.read()
+        self.assertIn(".team-crest-wrap", css)
+        self.assertIn(".player-face-avatar", css)
+        self.assertIn(".pitch-ovr-badge", css)
+
+        # 4. Executa simulação em Node.js para validar funções do domain.js e renderização no main.js
+        cmd = [
+            "node", "-e",
+            """
+            const fs = require('fs');
+            const vm = require('vm');
+            const domain = require('./assets/js/domain.js');
+
+            // Teste 1: renderTeamCrest
+            const crestAndorra = domain.renderTeamCrest('FC Andorra', 114554, 'lg');
+            const crestEibar = domain.renderTeamCrest('SD Eibar', null, 'sm');
+            const crestUnknown = domain.renderTeamCrest('Clube Desconhecido', 0, 'md');
+
+            // Teste 2: renderPlayerFace
+            const faceLautaro = domain.renderPlayerFace({ playerid: 260044, nome: 'Lautaro', numero: 11 }, 'pitch');
+            const faceYouth = domain.renderPlayerFace({ playerid: 285000, nome: 'Base', numero: 30 }, 'md');
+
+            // Teste 3: Simulação DOM com main.js
+            const data = JSON.parse(fs.readFileSync('assets/data/career_data.json', 'utf-8'));
+            const listeners = {};
+            const elements = new Map();
+
+            function makeElement(id) {
+              return {
+                id,
+                textContent: '',
+                innerHTML: '',
+                children: [],
+                style: {},
+                classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
+                appendChild(c) { this.children.push(c); return c; },
+                addEventListener() {},
+                setAttribute() {},
+                getAttribute() { return null; },
+                querySelector() { return makeElement(null); },
+                querySelectorAll() { return []; }
+              };
+            }
+
+            const doc = {
+              body: makeElement('body'),
+              getElementById(id) {
+                if (!elements.has(id)) elements.set(id, makeElement(id));
+                return elements.get(id);
+              },
+              querySelector() { return makeElement(null); },
+              querySelectorAll() { return []; },
+              createElement(t) { return makeElement(t); },
+              addEventListener(e, fn) { (listeners[e] = listeners[e] || []).push(fn); }
+            };
+
+            const sandbox = {
+              console,
+              document: doc,
+              window: {},
+              FALLBACK_CAREER_DATA: data,
+              setTimeout,
+              clearTimeout,
+              fetch: () => Promise.reject(new Error('offline'))
+            };
+            sandbox.window = sandbox;
+            sandbox.self = sandbox;
+            vm.createContext(sandbox);
+
+            vm.runInContext(fs.readFileSync('assets/js/domain.js', 'utf-8'), sandbox);
+            vm.runInContext(fs.readFileSync('assets/js/main.js', 'utf-8'), sandbox);
+
+            (async () => {
+              for (const fn of listeners.DOMContentLoaded || []) await fn();
+              await new Promise(r => setTimeout(r, 40));
+
+              const pitchHtml = doc.getElementById('tactical-pitch').innerHTML;
+              const matchesHtml = doc.getElementById('matches-grid-container').innerHTML;
+              const laligaHtml = doc.getElementById('laliga2-table-body').innerHTML;
+              const crestHtml = doc.getElementById('club-crest').innerHTML;
+
+              process.stdout.write(JSON.stringify({
+                hasCrestUrlAndorra: crestAndorra.includes('114554/120.png'),
+                hasCrestUrlEibar: crestEibar.includes('467/120.png'),
+                hasCrestFallbackUnknown: crestUnknown.includes('team-crest-fallback'),
+                hasFaceLautaro: faceLautaro.includes('260/044/26_120.png'),
+                hasFaceYouthFallback: faceYouth.includes('player-face-fallback'),
+                hasPitchFaces: pitchHtml.includes('player-face-avatar') && pitchHtml.includes('pitch-ovr-badge'),
+                hasMatchesCrests: matchesHtml.includes('team-crest-wrap'),
+                hasStandingsCrests: laligaHtml.includes('team-crest-wrap'),
+                hasHeaderCrest: crestHtml.includes('team-crest-wrap')
+              }));
+            })();
+            """
+        ]
+        res = subprocess.run(cmd, cwd=PROJECT_ROOT, capture_output=True, text=True, encoding="utf-8")
+        self.assertEqual(res.returncode, 0, f"Falha na simulação de escudos e minifaces: {res.stderr}")
+        out = json.loads(res.stdout)
+        self.assertTrue(out["hasCrestUrlAndorra"])
+        self.assertTrue(out["hasCrestUrlEibar"])
+        self.assertTrue(out["hasCrestFallbackUnknown"])
+        self.assertTrue(out["hasFaceLautaro"])
+        self.assertTrue(out["hasFaceYouthFallback"])
+        self.assertTrue(out["hasPitchFaces"])
+        self.assertTrue(out["hasMatchesCrests"])
+        self.assertTrue(out["hasStandingsCrests"])
+        self.assertTrue(out["hasHeaderCrest"])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
