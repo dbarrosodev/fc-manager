@@ -196,19 +196,11 @@
 
     const uniqueComps = Array.from(compSet).sort();
 
-    // 1. Dropdown de Partidas
+    // Dropdown de Partidas
     const matchesSelect = document.getElementById("matches-comp-filter");
     if (matchesSelect) {
       const currentVal = matchesCompFilter || "all";
       matchesSelect.innerHTML = `<option value="all">Todas as Competições</option>` +
-        uniqueComps.map(c => `<option value="${Domain.escapeHtml(c)}" ${c === currentVal ? "selected" : ""}>${Domain.escapeHtml(c)}</option>`).join("");
-    }
-
-    // 2. Dropdown de Logs de Atuação
-    const logsSelect = document.getElementById("log-comp-filter");
-    if (logsSelect) {
-      const currentVal = logFilters.competition || "all";
-      logsSelect.innerHTML = `<option value="all">Todas as Competições</option>` +
         uniqueComps.map(c => `<option value="${Domain.escapeHtml(c)}" ${c === currentVal ? "selected" : ""}>${Domain.escapeHtml(c)}</option>`).join("");
     }
   }
@@ -396,14 +388,11 @@
 
     // 4. KPI Finanças & Grupo
     setText("stat-squad-value", Domain.formatCurrency(club.valor_elenco_total || 0));
-    setText("stat-wage-bill", `${Domain.formatCurrency(club.folha_salarial_semanal || 0)} /sem`);
+    setText("stat-wage-bill", `${Domain.formatCurrency(club.folha_salarial_semanal || 0)}/sem`);
     const avgOvrVal = squad.length > 0 ? (squad.reduce((a, p) => a + (p.overall || 0), 0) / squad.length).toFixed(1) : "—";
     const avgAgeVal = squad.length > 0 ? (squad.reduce((a, p) => a + (p.idade || 0), 0) / squad.length).toFixed(1) : "—";
-    setText("stat-squad-averages", `${avgOvrVal} OVR · ${avgAgeVal} anos`);
-    setText("stat-squad-count-sub", `${squad.length} Jogadores no Elenco`);
-
-    setText("stat-preseason-record", pre.titulo || "Concluída");
-    setText("stat-preseason-sub", `${pre.nome_torneio || pre.titulo || "Torneio"} (Campeão)`);
+    setText("stat-squad-averages", `${avgOvrVal} OVR`);
+    setText("stat-squad-age", `${avgAgeVal} anos`);
 
     // Atualizar rodapé dinamicamente com nome do clube e treinador
     setText("footer-club-info", `${club.nome || "Clube"} (${club.treinador || "Treinador"})`);
@@ -610,23 +599,23 @@
 
     pitch.innerHTML = tokens.map(({ player, x, y }) => {
       const sector = player.setor_canonico || "meio";
-      const isHigh = player.overall >= 70;
       const ratingClass = Domain.getRatingBadgeClass(player.nota_media);
       let statBadges = "";
       if (player.gols > 0) statBadges += `<span class="pitch-stat-icon" title="${player.gols} gol(s)">⚽${player.gols}</span>`;
       if (player.assistencias > 0) statBadges += `<span class="pitch-stat-icon" title="${player.assistencias} assistência(s)">👟${player.assistencias}</span>`;
 
       return `
-        <div class="pitch-player-token ${sector}" style="top: ${y}%; left: ${x}%;" onclick="window.TrackerApp.openPlayerModal(${player.playerid})" title="${Domain.escapeHtml(player.nome)} (${Domain.escapeHtml(player.posicao_principal)})">
-          <div class="pitch-token-badge">
-            <span>${player.numero || "-"}</span>
-            <span class="pitch-token-pos">${Domain.escapeHtml(player.posicao_principal)}</span>
+        <div class="pitch-player pitch-player-token ${sector}" style="top: ${y}%; left: ${x}%;" onclick="window.TrackerApp.openPlayerModal(${player.playerid})" title="${Domain.escapeHtml(player.nome)} (${Domain.escapeHtml(player.posicao_principal)})" tabindex="0" role="button" aria-label="Ver perfil de ${Domain.escapeHtml(player.nome)}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); window.TrackerApp.openPlayerModal(${player.playerid});}">
+          <div class="pitch-avatar-wrap">
+            <div class="pitch-avatar">
+              <span class="pitch-avatar-num">${player.numero || "-"}</span>
+              <span class="pitch-avatar-ovr">${player.overall || "—"}</span>
+            </div>
+            <span class="pitch-rating-badge rating-badge ${ratingClass}" title="Nota Média">${Domain.formatRating(player.nota_media)}</span>
           </div>
-          <div class="pitch-token-card">
-            <span class="pitch-token-name">${Domain.escapeHtml(player.nome)}</span>
-            <span class="pitch-token-rating ${isHigh ? 'high' : ''}">${player.overall}</span>
-            <span class="rating-badge ${ratingClass}" style="font-size:9.5px; padding:1px 3px;" title="Nota Média">${Domain.formatRating(player.nota_media)}</span>
-            ${statBadges}
+          <div class="pitch-name-pill">
+            <span class="pitch-player-name">${Domain.escapeHtml(player.nome)}</span>
+            ${statBadges ? `<span class="pitch-pill-stats">${statBadges}</span>` : ""}
           </div>
         </div>
       `;
@@ -653,11 +642,11 @@
       if (squadViewMode === "contracts") {
         thead.innerHTML = `
           <tr>
-            <th class="cell-num">Nº</th>
-            <th>Jogador</th>
-            <th>Pos</th>
-            <th class="cell-num sortable" data-sort="idade" title="Ordenar por Idade">Idade <span class="sort-indicator"></span></th>
-            <th class="cell-num sortable" data-sort="overall" title="Ordenar por Overall">OVR <span class="sort-indicator"></span></th>
+            <th class="cell-num col-num">Nº</th>
+            <th class="col-player">Jogador</th>
+            <th class="col-pos">Pos</th>
+            <th class="cell-num sortable col-age" data-sort="idade" title="Ordenar por Idade">Idade <span class="sort-indicator"></span></th>
+            <th class="cell-num sortable col-ovr" data-sort="overall" title="Ordenar por Overall">OVR <span class="sort-indicator"></span></th>
             <th class="cell-num sortable" data-sort="potencial" title="Ordenar por Potencial">POT <span class="sort-indicator"></span></th>
             <th class="cell-num sortable" data-sort="margem_potencial" title="Ordenar por Margem">Margem <span class="sort-indicator"></span></th>
             <th class="cell-num sortable" data-sort="valor_mercado" title="Ordenar por Valor">Valor de Mercado <span class="sort-indicator"></span></th>
@@ -668,11 +657,11 @@
       } else {
         thead.innerHTML = `
           <tr>
-            <th class="cell-num">Nº</th>
-            <th>Jogador</th>
-            <th>Pos</th>
-            <th class="cell-num sortable" data-sort="idade" title="Ordenar por Idade">Idade <span class="sort-indicator"></span></th>
-            <th class="cell-num sortable" data-sort="overall" title="Ordenar por Overall">OVR <span class="sort-indicator"></span></th>
+            <th class="cell-num col-num">Nº</th>
+            <th class="col-player">Jogador</th>
+            <th class="col-pos">Pos</th>
+            <th class="cell-num sortable col-age" data-sort="idade" title="Ordenar por Idade">Idade <span class="sort-indicator"></span></th>
+            <th class="cell-num sortable col-ovr" data-sort="overall" title="Ordenar por Overall">OVR <span class="sort-indicator"></span></th>
             <th class="cell-num sortable" data-sort="jogos" title="Ordenar por Jogos">J (Tit/Sub) <span class="sort-indicator"></span></th>
             <th class="cell-num sortable" data-sort="minutos" title="Ordenar por Minutos">Min <span class="sort-indicator"></span></th>
             <th class="cell-num sortable" data-sort="pct_minutos" title="Ordenar por % Min">% Min <span class="sort-indicator"></span></th>
@@ -724,8 +713,8 @@
 
         return `
           <tr tabindex="0" role="button" aria-label="Ver ficha de ${Domain.escapeHtml(p.nome)}" onclick="window.TrackerApp.openPlayerModal(${p.playerid})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); window.TrackerApp.openPlayerModal(${p.playerid});}">
-            <td class="cell-num"><span class="player-num-circle">${p.numero || "-"}</span></td>
-            <td>
+            <td class="cell-num col-num"><span class="player-num-circle">${p.numero || "-"}</span></td>
+            <td class="col-player">
               <div class="player-names-cell">
                 <div>
                   <span class="player-display-name">${Domain.escapeHtml(p.nome)}</span>
@@ -733,9 +722,9 @@
                 </div>
               </div>
             </td>
-            <td><span class="badge badge-pos ${posSector}">${Domain.escapeHtml(p.posicao_principal)}</span></td>
-            <td class="cell-num">${p.idade}</td>
-            <td class="cell-num cell-bold">${p.overall}</td>
+            <td class="col-pos"><span class="badge badge-pos ${posSector}">${Domain.escapeHtml(p.posicao_principal)}</span></td>
+            <td class="cell-num col-age">${p.idade}</td>
+            <td class="cell-num cell-bold col-ovr">${p.overall}</td>
             <td class="cell-num"><span class="badge badge-pot">${p.potencial}</span></td>
             <td class="cell-num cell-bold" style="color:var(--brand-cyan);">+${margin}</td>
             <td class="cell-num cell-bold" style="color:var(--brand-cyan);">${Domain.formatCurrency(p.valor_mercado || 0)}</td>
@@ -769,8 +758,8 @@
 
         return `
           <tr tabindex="0" role="button" aria-label="Ver ficha de ${Domain.escapeHtml(p.nome)}" onclick="window.TrackerApp.openPlayerModal(${p.playerid})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); window.TrackerApp.openPlayerModal(${p.playerid});}">
-            <td class="cell-num"><span class="player-num-circle">${p.numero || "-"}</span></td>
-            <td>
+            <td class="cell-num col-num"><span class="player-num-circle">${p.numero || "-"}</span></td>
+            <td class="col-player">
               <div class="player-names-cell">
                 <div>
                   <span class="player-display-name">${Domain.escapeHtml(p.nome)}</span>
@@ -779,9 +768,9 @@
                 </div>
               </div>
             </td>
-            <td><span class="badge badge-pos ${posSector}">${Domain.escapeHtml(p.posicao_principal)}</span></td>
-            <td class="cell-num">${p.idade}</td>
-            <td class="cell-num cell-bold">${p.overall} ${evolBadge}</td>
+            <td class="col-pos"><span class="badge badge-pos ${posSector}">${Domain.escapeHtml(p.posicao_principal)}</span></td>
+            <td class="cell-num col-age">${p.idade}</td>
+            <td class="cell-num cell-bold col-ovr">${p.overall} ${evolBadge}</td>
             <td class="cell-num">${p.jogos} <small style="color:var(--text-muted);">(${p.jogos_titular}T/${p.jogos_reserva}R)</small></td>
             <td class="cell-num cell-bold">${p.minutos}'</td>
             <td class="cell-num">${p.pct_minutos || 0}%</td>
@@ -1377,14 +1366,6 @@
       });
     }
 
-    const squadConfidence = document.getElementById("squad-confidence-filter");
-    if (squadConfidence) {
-      squadConfidence.addEventListener("change", e => {
-        squadFilters.confidence = e.target.value;
-        renderSquadTab();
-      });
-    }
-
     // Ordenação clicável nos cabeçalhos da tabela do elenco
     document.querySelectorAll("#squad-table th.sortable").forEach(th => {
       th.addEventListener("click", () => {
@@ -1413,30 +1394,6 @@
       matchesVenue.addEventListener("change", e => {
         matchesVenueFilter = e.target.value;
         renderMatchesGrid();
-      });
-    }
-
-    const logSearch = document.getElementById("log-search");
-    if (logSearch) {
-      logSearch.addEventListener("input", e => {
-        logFilters.search = e.target.value.trim();
-        renderMatchLogsTable();
-      });
-    }
-
-    const logComp = document.getElementById("log-comp-filter");
-    if (logComp) {
-      logComp.addEventListener("change", e => {
-        logFilters.competition = e.target.value;
-        renderMatchLogsTable();
-      });
-    }
-
-    const logMatch = document.getElementById("log-match-filter");
-    if (logMatch) {
-      logMatch.addEventListener("change", e => {
-        logFilters.match = e.target.value;
-        renderMatchLogsTable();
       });
     }
 

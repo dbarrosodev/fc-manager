@@ -302,11 +302,13 @@ class TestUISportsAnalyticsRefactor(unittest.TestCase):
             self.assertNotIn(opt, self.index_html.lower(), f"Option hardcoded '{opt}' encontrado no HTML")
 
     # -------------------------------------------------------------------------
-    # CENÁRIO 45: Filtros de Competição Populados Dinamicamente
+    # CENÁRIO 45: Filtros de Competição Populados Dinamicamente e Remoção de Selects Fantasmas
     # -------------------------------------------------------------------------
     def test_45_dynamic_competition_filters_populated(self):
-        """Executa simulação e confere se os dropdowns de competição foram hidratados via JS."""
+        """Executa simulação e confere se os dropdowns de competição foram hidratados via JS e selects fantasmas removidos."""
         self.assertIn("populateCompetitionFilters", self.main_js)
+        self.assertNotIn('id="log-comp-filter"', self.index_html, "Select fantasma log-comp-filter ainda presente no HTML")
+        self.assertNotIn('id="squad-confidence-filter"', self.index_html, "Select fantasma squad-confidence-filter ainda presente no HTML")
 
         cmd = [
             "node", "-e",
@@ -363,11 +365,9 @@ class TestUISportsAnalyticsRefactor(unittest.TestCase):
               await new Promise(r => setTimeout(r, 40));
 
               const matchFilter = doc.getElementById('matches-comp-filter');
-              const logFilter = doc.getElementById('log-comp-filter');
 
               process.stdout.write(JSON.stringify({
-                matchOptions: matchFilter.innerHTML,
-                logOptions: logFilter.innerHTML
+                matchOptions: matchFilter.innerHTML
               }));
             })();
             """
@@ -377,8 +377,6 @@ class TestUISportsAnalyticsRefactor(unittest.TestCase):
         out = json.loads(res.stdout)
         self.assertIn("Todas as Competições", out["matchOptions"])
         self.assertIn("LaLiga Hypermotion", out["matchOptions"])
-        self.assertIn("Todas as Competições", out["logOptions"])
-        self.assertIn("LaLiga Hypermotion", out["logOptions"])
 
     # -------------------------------------------------------------------------
     # CENÁRIO 46: Exportação Dinâmica (Client-side Blob CSV e Excel)
@@ -860,6 +858,114 @@ class TestUISportsAnalyticsRefactor(unittest.TestCase):
         self.assertTrue(out["hasPer90Grid"], "Modal do jogador deve conter grid de métricas per-90")
         self.assertTrue(out["hasGols90"])
         self.assertTrue(out["hasMatchHistoryTable"], "Modal do jogador deve conter tabela do histórico de partidas")
+
+    # -------------------------------------------------------------------------
+    # CENÁRIO 53: Bento Grid da Aba Visão Geral (Estrutura e CSS)
+    # -------------------------------------------------------------------------
+    def test_53_overview_bento_grid_layout(self):
+        """Verifica se a aba Visão Geral implementa o Bento Grid simétrico com 12 colunas, span 5 e 7."""
+        with open(self.css_path, "r", encoding="utf-8") as f:
+            css = f.read()
+
+        # 1. Estrutura no HTML
+        self.assertIn('class="overview-col-left"', self.index_html, "Coluna esquerda (span 5) ausente no HTML")
+        self.assertIn('class="overview-col-right"', self.index_html, "Coluna direita (span 7) ausente no HTML")
+        self.assertIn('class="overview-row-bottom"', self.index_html, "Linha inferior (largura total) ausente no HTML")
+
+        # 2. Regras no CSS
+        self.assertIn("grid-column: span 5", css, "Regra grid-column: span 5 ausente no CSS")
+        self.assertIn("grid-column: span 7", css, "Regra grid-column: span 7 ausente no CSS")
+        self.assertIn("grid-column: 1 / -1", css, "Regra grid-column: 1 / -1 ausente no CSS")
+        self.assertIn("repeat(4, minmax(0, 1fr))", css, "Grid do radar com 4 colunas simétricas ausente no CSS")
+
+    # -------------------------------------------------------------------------
+    # CENÁRIO 54: Campinho Tático em SVG Real e Nós de Jogadores Anti-Colisão
+    # -------------------------------------------------------------------------
+    def test_54_tactical_pitch_real_svg_and_anti_collision(self):
+        """Verifica se as divs vazias foram substituídas por SVG real 680x520 e estilos de nós com anti-colisão."""
+        with open(self.css_path, "r", encoding="utf-8") as f:
+            css = f.read()
+
+        # 1. Validação do SVG no index.html
+        self.assertIn('viewBox="0 0 680 520"', self.index_html, "viewBox 0 0 680 520 ausente no SVG do campo")
+        self.assertIn('preserveAspectRatio="xMidYMid meet"', self.index_html)
+        self.assertIn('rgba(255,255,255,0.02)', self.index_html, "Listras alternadas sutis ausentes no SVG")
+        self.assertIn('Arcos da meia-lua', self.index_html)
+
+        # 2. Ausência das 6 divs vazias que imitavam o campo
+        self.assertNotIn('class="pitch-line-half"', self.index_html)
+        self.assertNotIn('class="pitch-center-circle"', self.index_html)
+        self.assertNotIn('class="pitch-penalty-area-top"', self.index_html)
+        self.assertNotIn('class="pitch-penalty-area-bottom"', self.index_html)
+        self.assertNotIn('class="pitch-goal-area-bottom"', self.index_html)
+
+        # 3. Regras CSS dos nós dos jogadores (.pitch-player) e anti-colisão
+        self.assertIn(".pitch-player {", css)
+        self.assertIn("transform: translate(-50%, -50%);", css)
+        self.assertIn("transform: translate(-50%, -50%) scale(1.08);", css)
+        self.assertIn("z-index: 30;", css)
+
+        # 4. Pílula inferior com estilo Sofascore e truncation
+        self.assertIn("max-width: 92px", css)
+        self.assertIn("backdrop-filter: blur(4px)", css)
+        self.assertIn("text-overflow: ellipsis", css)
+
+    # -------------------------------------------------------------------------
+    # CENÁRIO 55: Padronização dos 4 KPI Cards do Topo
+    # -------------------------------------------------------------------------
+    def test_55_kpi_cards_standardization(self):
+        """Verifica se o 4º card tem no máximo 3 itens e se os 4 cards possuem layout flex padronizado."""
+        with open(self.css_path, "r", encoding="utf-8") as f:
+            css = f.read()
+
+        # 1. Regra no CSS para os 4 cards
+        self.assertIn(".kpi-card {", css)
+        self.assertIn("display: flex;", css)
+        self.assertIn("flex-direction: column;", css)
+        self.assertIn("justify-content: space-between;", css)
+        self.assertIn("height: 100%;", css)
+
+        # 2. Ausência de spans ocultos (fantasmas) nos rodapés dos KPIs
+        self.assertNotIn('id="stat-squad-count-sub"', self.index_html)
+        self.assertNotIn('id="stat-preseason-record"', self.index_html)
+        self.assertNotIn('id="stat-preseason-sub"', self.index_html)
+        self.assertNotIn('id="stat-league-sub"', self.index_html)
+        self.assertNotIn('id="stat-total-sub"', self.index_html)
+        self.assertNotIn('id="stat-goals-sub"', self.index_html)
+
+        # 3. Consolidação em exatamente 3 itens no 4º card
+        self.assertIn('id="stat-wage-bill"', self.index_html)
+        self.assertIn('id="stat-squad-averages"', self.index_html)
+        self.assertIn('id="stat-squad-age"', self.index_html)
+
+    # -------------------------------------------------------------------------
+    # CENÁRIO 56: Polimento de Tabelas, Tipografia Numérica e Segmented Control
+    # -------------------------------------------------------------------------
+    def test_56_table_stabilization_and_segmented_control(self):
+        """Verifica tabular-nums global, colunas estabilizadas, sticky mobile e segmented control."""
+        with open(self.css_path, "r", encoding="utf-8") as f:
+            css = f.read()
+
+        # 1. font-variant-numeric: tabular-nums global
+        self.assertIn("font-variant-numeric: tabular-nums;", css)
+        self.assertIn(".rating-badge", css)
+        self.assertIn(".ovr-badge", css)
+
+        # 2. Estabilização das larguras das colunas do elenco
+        self.assertIn("48px", css)
+        self.assertIn("minmax(180px, 1.5fr)", css)
+        self.assertIn("64px", css)
+        self.assertIn("68px", css)
+
+        # 3. Sticky column no tablet/mobile (<= 1024px)
+        self.assertIn("@media (max-width: 1024px)", css)
+        self.assertIn("position: sticky;", css)
+        self.assertIn("z-index: 5;", css)
+
+        # 4. Segmented Control com borda e border-radius 10px
+        self.assertIn("border-radius: 10px;", css)
+        self.assertIn("var(--border-color)", css)
+        self.assertIn('[aria-selected="true"]', css)
 
 
 if __name__ == "__main__":
