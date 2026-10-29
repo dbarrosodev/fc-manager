@@ -1231,6 +1231,49 @@ class TestUISportsAnalyticsRefactor(unittest.TestCase):
         self.assertTrue(out["hasMinutos"])
         self.assertTrue(out["hasGA90"])
 
+    # -------------------------------------------------------------------------
+    # CENÁRIO 63: Badge de Resultado, Alinhamento de Cards, Normalização LaLiga e Gols
+    # -------------------------------------------------------------------------
+    def test_63_match_card_badges_alignment_laliga_and_9match_goals(self):
+        """Verifica correções de CSS nos match cards, unificação canônica da LaLiga e artilheiros em saves de 9 jogos."""
+        # 1. Validação de CSS nos Match Cards e Badges de Resultado
+        with open(self.css_path, "r", encoding="utf-8") as f:
+            css = f.read()
+
+        self.assertIn("result-badge", css)
+        self.assertIn("border-radius: 9999px", css)
+        self.assertIn("match-teams-row", css)
+        self.assertIn("min-height: 3.25rem", css)
+        self.assertIn("grid-template-columns: 1fr auto 1fr", css)
+        self.assertIn("match-card-header", css)
+
+        # 2. Normalização de Nome de Competição no Domain e Save Parser
+        from src.save_parser import normalize_competition_name, parse_save_file
+        self.assertEqual(normalize_competition_name("LaLiga Hypermotion (2ª Divisão)"), "LaLiga Hypermotion")
+        self.assertEqual(normalize_competition_name("LaLiga Hypermotion (Segunda División)"), "LaLiga Hypermotion")
+
+        # 3. Validação do Save Real com 9 Partidas
+        save_9_path = os.path.join(PROJECT_ROOT, "saves", "CmMgrC20261029111706028")
+        if os.path.exists(save_9_path):
+            data = parse_save_file(save_9_path)
+            self.assertEqual(len(data["matches"]), 9)
+
+            m7 = next(m for m in data["matches"] if m["id"] == 7)
+            m8 = next(m for m in data["matches"] if m["id"] == 8)
+            m9 = next(m for m in data["matches"] if m["id"] == 9)
+
+            self.assertIn("Lautaro de León", m7["artilheiros"])
+            self.assertIn("Aingeru Olabarrieta", m7["artilheiros"])
+            self.assertIn("Marc Cardona", m8["artilheiros"])
+            self.assertIn("Manu Bueno", m8["artilheiros"])
+            self.assertIn("Lautaro de León", m9["artilheiros"])
+
+            squad_goals = sum(p["gols"] for p in data["squad"])
+            self.assertEqual(squad_goals, 19, "Soma de gols do elenco deve ser exatamente 19")
+            self.assertEqual(data["club"]["total_gols_elenco"], 19)
+            self.assertEqual(data["club"]["gols_pro_temporada"], 19)
+            self.assertEqual(data["validation_report"]["checks"][0]["status"], "OK (VERIFICADO)")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

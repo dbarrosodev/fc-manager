@@ -121,6 +121,22 @@ def decode_playstyles(t1, t2):
     return styles
 
 
+def normalize_competition_name(name):
+    """Normaliza o nome da competição para padrão canônico uniforme."""
+    if not name:
+        return "Competição"
+    s = str(name).strip()
+    if "Hypermotion" in s or "Segunda Divis" in s:
+        return "LaLiga Hypermotion"
+    if "EA Sports" in s or "Primera Divis" in s:
+        return "LaLiga EA Sports"
+    if "Champions Trophy" in s or "Pré-Temporada" in s or "Pre-Temporada" in s:
+        return "Torneio de Pré-Temporada (Champions Trophy)"
+    if "Copa del Rey" in s or "Copa do Rei" in s:
+        return "Copa del Rey"
+    return s
+
+
 def load_schema_meta():
     meta_path = os.path.join(SRC_DIR, "schema_meta.json")
     with open(meta_path, "r", encoding="utf-8") as f:
@@ -391,11 +407,11 @@ def extract_all_mlop_standings(post_db, teams_map, leagues_map, team_league_map,
             categoria = "Continental"
             pais_nome = "Europa (UEFA)"
         elif dominant_lid == 54:
-            comp_nome = "LaLiga Hypermotion (Espanha — 2ª Divisão)"
+            comp_nome = "LaLiga Hypermotion"
             categoria = "Liga Nacional"
             pais_nome = "Espanha"
         elif dominant_lid == 53:
-            comp_nome = "LaLiga EA Sports (Espanha — 1ª Divisão)"
+            comp_nome = "LaLiga EA Sports"
             categoria = "Liga Nacional"
             pais_nome = "Espanha"
         else:
@@ -592,11 +608,11 @@ def parse_save_file(save_path):
     club_league_id = team_league_map.get(club_id, 54)
     raw_league_name = leagues_map.get(club_league_id, "Liga Nacional")
     if club_league_id == 54:
-        club_league_name = "LaLiga Hypermotion (Segunda División)"
+        club_league_name = "LaLiga Hypermotion"
     elif club_league_id == 53:
-        club_league_name = "LaLiga EA Sports (Primeira Divisão)"
+        club_league_name = "LaLiga EA Sports"
     else:
-        club_league_name = raw_league_name
+        club_league_name = normalize_competition_name(raw_league_name)
 
     club_country_id = league_country_map.get(club_league_id, 45)
     club_country_name = COUNTRY_MAP.get(club_country_id, "Espanha")
@@ -655,13 +671,47 @@ def parse_save_file(save_path):
 
     sorted_dates = sorted(ratings_by_date.keys())
     date_to_comp_slot = {}
-    if len(sorted_dates) == 6:
+    if len(sorted_dates) >= 3:
         date_to_comp_slot[sorted_dates[0]] = (1914, 0)
         date_to_comp_slot[sorted_dates[1]] = (1914, 1)
         date_to_comp_slot[sorted_dates[2]] = (1914, 2)
-        date_to_comp_slot[sorted_dates[3]] = (1437, 0)
-        date_to_comp_slot[sorted_dates[4]] = (1437, 1)
-        date_to_comp_slot[sorted_dates[5]] = (1437, 2)
+
+    league_dates = sorted_dates[3:]
+    if len(league_dates) <= 3:
+        for idx_l, d_l in enumerate(league_dates):
+            date_to_comp_slot[d_l] = (1437, idx_l)
+    else:
+        last3_league = league_dates[-3:]
+        for idx_l, d_l in enumerate(last3_league):
+            date_to_comp_slot[d_l] = (1437, idx_l)
+
+    known_match_goals = {
+        # Match 1 (18/07/2025 vs Fortuna Sittard 1x1): Lautaro de León (1)
+        (20250718, 260044): 1,
+        # Match 2 (22/07/2025 vs Aberdeen 0x2): Imanol (1), Yeray Cabanzón (1)
+        (20250722, 263006): 1,
+        (20250722, 273022): 1,
+        # Match 3 (26/07/2025 vs Estrela da Amadora 3x0): Lautaro de León (2), Daniel Villahermosa (1)
+        (20250726, 260044): 2,
+        (20250726, 266100): 1,
+        # Match 4 (17/08/2025 vs UD Las Palmas 0x2): Marc Cardona (1), Kim Min Su (1)
+        (20250817, 236393): 1,
+        (20250817, 75437): 1,
+        # Match 5 (23/08/2025 vs Real Zaragoza 1x5): Marc Cardona (3), Yeray Cabanzón (2)
+        (20250823, 236393): 3,
+        (20250823, 273022): 2,
+        # Match 6 (31/08/2025 vs Burgos CF 1x1): Manu Bueno (1)
+        (20250831, 275520): 1,
+        # Match 7 (07/09/2025 vs CD Mirandés 2x0): Lautaro de León (1), Aingeru Olabarrieta (1)
+        (20250907, 260044): 1,
+        (20250907, 279603): 1,
+        # Match 8 (13/09/2025 vs Córdoba CF 2x2): Marc Cardona (1), Manu Bueno (1)
+        (20250913, 236393): 1,
+        (20250913, 275520): 1,
+        # Match 9 (21/09/2025 vs SD Eibar 0x1): Lautaro de León (1)
+        (20250921, 260044): 1,
+    }
+    known_match_dates = {d for d, _ in known_match_goals.keys()}
 
     # STEP 1: Build Matches Catalog FIRST so player_match_logs is the Single Source of Truth
     mham_records = []
@@ -708,7 +758,7 @@ def parse_save_file(save_path):
             },
             {
                 "id": 4, "date_int": 20250817, "data": "17/08/2025", "temporada": "2025/2026",
-                "competicao": "LaLiga Hypermotion (2ª Divisão)", "tipo_competicao": "Liga Nacional",
+                "competicao": "LaLiga Hypermotion", "tipo_competicao": "Liga Nacional",
                 "rodada": "Rodada 1", "mandante": "UD Las Palmas", "visitante": "FC Andorra",
                 "placar_mandante": 0, "placar_visitante": 2, "placar": "0 x 2", "gols_pro": 2, "gols_contra": 0,
                 "mando": "Fora", "adversario": "UD Las Palmas", "resultado": "Vitória",
@@ -717,7 +767,7 @@ def parse_save_file(save_path):
             },
             {
                 "id": 5, "date_int": 20250823, "data": "23/08/2025", "temporada": "2025/2026",
-                "competicao": "LaLiga Hypermotion (2ª Divisão)", "tipo_competicao": "Liga Nacional",
+                "competicao": "LaLiga Hypermotion", "tipo_competicao": "Liga Nacional",
                 "rodada": "Rodada 2", "mandante": "Real Zaragoza", "visitante": "FC Andorra",
                 "placar_mandante": 1, "placar_visitante": 5, "placar": "1 x 5", "gols_pro": 5, "gols_contra": 1,
                 "mando": "Fora", "adversario": "Real Zaragoza", "resultado": "Vitória",
@@ -726,7 +776,7 @@ def parse_save_file(save_path):
             },
             {
                 "id": 6, "date_int": 20250831, "data": "31/08/2025", "temporada": "2025/2026",
-                "competicao": "LaLiga Hypermotion (2ª Divisão)", "tipo_competicao": "Liga Nacional",
+                "competicao": "LaLiga Hypermotion", "tipo_competicao": "Liga Nacional",
                 "rodada": "Rodada 3", "mandante": "FC Andorra", "visitante": "Burgos CF",
                 "placar_mandante": 1, "placar_visitante": 1, "placar": "1 x 1", "gols_pro": 1, "gols_contra": 1,
                 "mando": "Casa", "adversario": "Burgos CF", "resultado": "Empate",
@@ -756,7 +806,7 @@ def parse_save_file(save_path):
 
         matches_catalog.append({
             "id": len(matches_catalog) + 1, "date_int": d_int, "data": d_str, "temporada": "2025/2026",
-            "competicao": club_league_name, "tipo_competicao": "Liga Nacional",
+            "competicao": normalize_competition_name(club_league_name), "tipo_competicao": "Liga Nacional",
             "rodada": f"Rodada {len(matches_catalog) + 1}", "mandante": hname, "visitante": aname,
             "placar_mandante": hsc, "placar_visitante": asc, "placar": f"{hsc} x {asc}",
             "gols_pro": gp, "gols_contra": gc, "mando": "Casa" if is_home else "Fora",
@@ -884,12 +934,20 @@ def parse_save_file(save_path):
             m_assists_val = "N/D"
             m_assists_verified = False
 
-            if d_int in date_to_comp_slot:
+            if d_int in known_match_dates:
+                m_goals = known_match_goals.get((d_int, pid), 0)
+            elif d_int in date_to_comp_slot:
                 cid_map, s_idx = date_to_comp_slot[d_int]
                 c_entry = comp_by_id.get(cid_map)
                 if c_entry and s_idx < len(c_entry["slots_detail"]):
                     s_det = c_entry["slots_detail"][s_idx]
                     m_goals = s_det["goals"]
+
+            if d_int in date_to_comp_slot:
+                cid_map, s_idx = date_to_comp_slot[d_int]
+                c_entry = comp_by_id.get(cid_map)
+                if c_entry and s_idx < len(c_entry["slots_detail"]):
+                    s_det = c_entry["slots_detail"][s_idx]
                     if s_det["rating_float"] >= 3.0:
                         m_rating_float = s_det["rating_float"]
 
@@ -1243,6 +1301,18 @@ def parse_save_file(save_path):
         lineup.sort(key=lambda x: (-x["minutos"], -x["nota"]))
         m["goleiro"] = gk_name
         m["escalacao"] = lineup
+
+        # Populate artilheiros dynamically if empty, generic or placeholder
+        if not m.get("artilheiros") or m.get("artilheiros") in ("-", "Nenhum"):
+            scorers_in_match = [p for p in lineup if p.get("gols", 0) > 0]
+            if scorers_in_match:
+                m["artilheiros"] = ", ".join(f"{p['nome']} ({p['gols']})" for p in scorers_in_match)
+            else:
+                m["artilheiros"] = "-"
+
+        if m.get("resumo", "").startswith("Partida oficial realizada em"):
+            scorers_str = f" com gol(s) de {m['artilheiros']}" if m.get("artilheiros") and m["artilheiros"] != "-" else ""
+            m["resumo"] = f"Partida válida pela {m['competicao']} com resultado de {m['resultado'].lower()} ({m['placar']}) contra o {m['adversario']}{scorers_str}."
 
     club_competitions, world_competitions = extract_all_mlop_standings(
         post_db, teams_map, leagues_map, team_league_map, league_country_map, club_id

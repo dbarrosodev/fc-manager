@@ -210,12 +210,12 @@
     const compSet = new Set();
     matches.forEach(m => {
       if (m.competicao && typeof m.competicao === "string") {
-        compSet.add(m.competicao.trim());
+        compSet.add(Domain.normalizeCompetitionName(m.competicao.trim()));
       }
     });
     logs.forEach(l => {
       if (l.competicao && typeof l.competicao === "string") {
-        compSet.add(l.competicao.trim());
+        compSet.add(Domain.normalizeCompetitionName(l.competicao.trim()));
       }
     });
 
@@ -404,12 +404,17 @@
     setText("stat-total-sub", `${tot.jogos || 0} Jogos Disputados`);
 
     // 3. KPI Poder de Fogo (Ataque)
-    setText("stat-goals-total", `${club.total_gols_elenco || 0} GP · ${club.total_assistencias_elenco || 0} Assists`);
+    const squadGoalsSum = squad.reduce((sum, p) => sum + (Number(p.gols) || 0), 0);
+    const goalsCount = squadGoalsSum > 0 ? squadGoalsSum : (club.total_gols_elenco || club.gols_pro_temporada || 0);
+    const squadAstSum = squad.reduce((sum, p) => sum + (Number(p.assistencias) || 0), 0);
+    const assistsCount = squadAstSum > 0 ? squadAstSum : (club.total_assistencias_elenco || 0);
+
+    setText("stat-goals-total", `${goalsCount} GP · ${assistsCount} Assists`);
     const topScorer = [...squad].sort((a, b) => (b.gols || 0) - (a.gols || 0))[0];
     const topAssister = [...squad].sort((a, b) => (b.assistencias || 0) - (a.assistencias || 0))[0];
     setText("stat-top-scorer", topScorer && (topScorer.gols || 0) > 0 ? `${topScorer.nome} (${topScorer.gols})` : "—");
     setText("stat-top-assister", topAssister && (topAssister.assistencias || 0) > 0 ? `${topAssister.nome} (${topAssister.assistencias})` : "—");
-    setText("stat-goals-sub", `${club.total_gols_elenco || 0} Gols Marcados`);
+    setText("stat-goals-sub", `${goalsCount} Gols Marcados`);
 
     // 4. KPI Finanças & Grupo
     setText("stat-squad-value", Domain.formatCurrency(club.valor_elenco_total || 0));
@@ -882,9 +887,9 @@
     let filtered = matches;
     if (matchesCompFilter !== "all") {
       filtered = filtered.filter(m => {
-        const c = (m.competicao || "").toLowerCase().trim();
-        const f = matchesCompFilter.toLowerCase().trim();
-        return c.includes(f) || f.includes(c);
+        const c = Domain.normalizeCompetitionName(m.competicao || "").toLowerCase().trim();
+        const f = Domain.normalizeCompetitionName(matchesCompFilter).toLowerCase().trim();
+        return c === f || c.includes(f) || f.includes(c);
       });
     }
 
@@ -951,11 +956,11 @@
 
       return `
         <div class="match-card" tabindex="0" role="button" aria-label="Ver ficha da partida ${Domain.escapeHtml(m.mandante)} contra ${Domain.escapeHtml(m.visitante)}" onclick="window.TrackerApp.openMatchModal(${m.id})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); window.TrackerApp.openMatchModal(${m.id});}">
-          <div class="match-card-top">
-            <span>${Domain.escapeHtml(m.competicao)} · ${Domain.escapeHtml(m.data)}</span>
-            <span class="badge badge-result ${resClass}">${Domain.escapeHtml(m.resultado)}</span>
+          <div class="match-card-top match-card-header">
+            <span class="match-card-comp-date">${Domain.escapeHtml(m.competicao)} · ${Domain.escapeHtml(m.data)}</span>
+            <span class="badge badge-result ${resClass} result-badge">${Domain.escapeHtml(m.resultado)}</span>
           </div>
-          <div class="match-card-teams">
+          <div class="match-card-teams match-teams-row">
             <span class="match-team-name">${Domain.escapeHtml(m.mandante)}</span>
             <span class="match-score-pill">${Domain.escapeHtml(formatScore(m, " - "))}</span>
             <span class="match-team-name away">${Domain.escapeHtml(m.visitante)}</span>

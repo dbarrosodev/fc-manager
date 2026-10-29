@@ -18,6 +18,27 @@
   // ==========================================================================
 
   /**
+   * Normaliza o nome da competição para padrão canônico uniforme.
+   */
+  function normalizeCompetitionName(name) {
+    if (!name) return "Competição";
+    const s = String(name).trim();
+    if (s.includes("Hypermotion") || /Segunda\s+Divis/i.test(s)) {
+      return "LaLiga Hypermotion";
+    }
+    if (s.includes("EA Sports") || /Primera\s+Divis/i.test(s)) {
+      return "LaLiga EA Sports";
+    }
+    if (s.includes("Champions Trophy") || /Pr[eé]-Temporada/i.test(s)) {
+      return "Torneio de Pré-Temporada (Champions Trophy)";
+    }
+    if (s.includes("Copa del Rey") || s.includes("Copa do Rei")) {
+      return "Copa del Rey";
+    }
+    return s;
+  }
+
+  /**
    * Normaliza os campos canônicos de um jogador para evitar bugs de strings compostas.
    * Ex: "Titular (ZAG)" -> hierarquia_tatica = "titular"
    */
@@ -248,6 +269,7 @@
     if (!m.mando) m.mando = isAway ? "Fora" : "Casa";
 
     // Resultado canônico (o texto original fica preservado em resultado_original)
+    m.competicao = normalizeCompetitionName(m.competicao);
     m.resultado_original = m.resultado;
     m.resultado_canonico = normalizeResult(m.resultado, m.gols_pro, m.gols_contra);
     const meta = getResultMeta(m.resultado_canonico);
@@ -309,8 +331,14 @@
     c.treinador = String(c.treinador || "Treinador").trim();
     c.data_atual = (c.data_atual && String(c.data_atual).trim() !== "") ? String(c.data_atual).trim() : "Indisponível";
     c.temporada = String(c.temporada || "Temporada 1").trim();
-    c.liga = String(c.liga || "Liga").trim();
+    c.liga = normalizeCompetitionName(c.liga || "Liga");
     c.pais = String(c.pais || "Espanha").trim();
+
+    if (Array.isArray(data.player_match_logs)) {
+      data.player_match_logs.forEach(l => {
+        if (l && l.competicao) l.competicao = normalizeCompetitionName(l.competicao);
+      });
+    }
 
     // Separar estritamente Liga vs Pré-Temporada
     const matches = data.matches;
@@ -368,6 +396,47 @@
         invicto: (lLiga + lCopa === 0 && matches.length > 0)
       }
     };
+
+    // Garantir conciliação correta do total de gols do elenco
+    let squadGoalsTotal = data.squad.reduce((sum, p) => sum + (Number(p.gols) || 0), 0);
+    const matchesGoalsTotal = data.matches.reduce((sum, m) => sum + (Number(m.gols_pro) || 0), 0);
+
+    if (squadGoalsTotal === 0 && matchesGoalsTotal > 0) {
+      // Reconciliar gols a partir dos artilheiros das partidas quando o elenco vier sem gols
+      data.matches.forEach(m => {
+        if (m.artilheiros && m.artilheiros !== "-" && m.artilheiros !== "Nenhum") {
+          const parts = String(m.artilheiros).split(",");
+          parts.forEach(part => {
+            const matchScorer = part.match(/(.+?)\s*\((\d+)\)/);
+            if (matchScorer) {
+              const sName = matchScorer[1].trim().toLowerCase();
+              const sGoals = Number(matchScorer[2]) || 0;
+              const targetPlayer = data.squad.find(p => 
+                p.nome.toLowerCase() === sName || 
+                p.nome_completo.toLowerCase() === sName ||
+                sName.includes(p.nome.toLowerCase()) ||
+                p.nome.toLowerCase().includes(sName)
+              );
+              if (targetPlayer) {
+                targetPlayer.gols += sGoals;
+                targetPlayer.participacoes_gol = (targetPlayer.gols || 0) + (targetPlayer.assistencias || 0);
+                if (m.tipo_competicao === "Liga Nacional") {
+                  targetPlayer.gols_liga = (targetPlayer.gols_liga || 0) + sGoals;
+                } else {
+                  targetPlayer.gols_copa = (targetPlayer.gols_copa || 0) + sGoals;
+                }
+              }
+            }
+          });
+        }
+      });
+      squadGoalsTotal = data.squad.reduce((sum, p) => sum + (Number(p.gols) || 0), 0);
+    }
+
+    c.total_gols_elenco = squadGoalsTotal > 0 ? squadGoalsTotal : (Number(c.total_gols_elenco) || matchesGoalsTotal);
+    if (!c.gols_pro_temporada || Number(c.gols_pro_temporada) === 0) {
+      c.gols_pro_temporada = matchesGoalsTotal > 0 ? matchesGoalsTotal : c.total_gols_elenco;
+    }
 
     // Última partida disputada: o resumo vindo do JSON é apenas um ponteiro (id).
     // A tela sempre recebe o registro completo e normalizado da partida.
@@ -654,6 +723,7 @@
   }
 
   return {
+    normalizeCompetitionName: normalizeCompetitionName,
     normalizePlayerData: normalizePlayerData,
     normalizeCareerData: normalizeCareerData,
     normalizeMatch: normalizeMatch,
