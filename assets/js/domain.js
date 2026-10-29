@@ -477,9 +477,18 @@
         if (!nameMatch) return false;
       }
 
-      // 2. Filtro de setor canônico
+      // 2. Filtro de setor canônico (com suporte a siglas GK, DEF, MID, ATT)
       if (sector !== "all") {
-        if (player.setor_canonico !== sector) return false;
+        const sectorNormalized = sector === "gk" ? "goleiro" :
+                                 sector === "def" ? "defesa" :
+                                 sector === "mid" ? "meio" :
+                                 sector === "att" ? "ataque" : sector;
+        if (player.setor_canonico !== sectorNormalized && player.setor_canonico !== sector) return false;
+      }
+
+      // Filtro rápido de minutagem relevante (≥ 150 min)
+      if (filters.minMinutesOnly === true || filters.minMinutesOnly === "true") {
+        if ((player.minutos || 0) < 150) return false;
       }
 
       // 3. Filtro de hierarquia tática canônica
@@ -615,6 +624,35 @@
     return num.toFixed(2);
   }
 
+  function getRatingBadgeClass(rating) {
+    const r = Number(rating) || 0;
+    if (r >= 7.5) return "rating-elite";
+    if (r >= 7.0) return "rating-good";
+    if (r >= 6.5) return "rating-average";
+    return "rating-subpar";
+  }
+
+  function getManOfTheMatch(match) {
+    if (!match || !Array.isArray(match.escalacao) || match.escalacao.length === 0) {
+      return null;
+    }
+    let best = null;
+    let maxRating = -1;
+    for (const p of match.escalacao) {
+      const r = Number(p.nota !== undefined ? p.nota : p.nota_partida) || 0;
+      if (r > maxRating) {
+        maxRating = r;
+        best = {
+          nome: p.nome || "Atleta",
+          nota: r,
+          playerid: p.playerid || null,
+          posicao: p.posicao || p.posicao_jogada || ""
+        };
+      }
+    }
+    return best;
+  }
+
   return {
     normalizePlayerData: normalizePlayerData,
     normalizeCareerData: normalizeCareerData,
@@ -630,6 +668,8 @@
     formatCurrency: formatCurrency,
     formatNumber: formatNumber,
     formatPercent: formatPercent,
-    formatRating: formatRating
+    formatRating: formatRating,
+    getRatingBadgeClass: getRatingBadgeClass,
+    getManOfTheMatch: getManOfTheMatch
   };
 });

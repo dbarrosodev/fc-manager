@@ -26,6 +26,8 @@
   let normalizedData = null;
   let isLocalServer = false;
   let activeTab = "overview";
+  let squadViewMode = "performance"; // "performance" | "contracts"
+  let matchesVenueFilter = "all"; // "all" | "home" | "away"
 
   // Filtros de Elenco
   const squadFilters = {
@@ -33,6 +35,7 @@
     sector: "all",
     hierarchy: "all",
     confidence: "all",
+    minMinutesOnly: false,
     sortBy: "minutos",
     sortOrder: "desc"
   };
@@ -312,14 +315,43 @@
     return words.map(w => w[0]).slice(0, 3).join("").toUpperCase();
   }
 
+  function renderFormGuide() {
+    const container = document.getElementById("form-guide-pills");
+    if (!container) return;
+    const matches = normalizedData.matches || [];
+    if (matches.length === 0) {
+      container.innerHTML = `<span style="font-size:11px; color:var(--text-muted);">Sem partidas</span>`;
+      return;
+    }
+    // As 5 partidas mais recentes (ordenadas por date_int asc para fluxo temporal da esquerda p/ direita)
+    const sorted = [...matches].sort((a, b) => (a.date_int || 0) - (b.date_int || 0));
+    const recent = sorted.slice(-5);
+    container.innerHTML = recent.map(m => {
+      const resMeta = Domain.getResultMeta(m.resultado_canonico);
+      const resLetter = resMeta.sigla || "E"; // 'V', 'E', 'D'
+      const pillClass = resMeta.css === "win" ? "form-pill-win" : resMeta.css === "loss" ? "form-pill-loss" : "form-pill-draw";
+      const opponent = m.adversario || (m.mando === "Casa" ? m.visitante : m.mandante) || "Adversário";
+      const tooltip = `${Domain.escapeHtml(opponent)} (${Domain.escapeHtml(formatScore(m, " x "))}) · ${Domain.escapeHtml(m.competicao || "")}`;
+      return `<span class="form-pill ${pillClass}" title="${tooltip}">${resLetter}</span>`;
+    }).join("");
+  }
+
   function renderClubHeader() {
     const club = normalizedData.club || {};
     const comps = club.competicoes_separadas || {};
     const liga = comps.liga || {};
     const pre = comps.pre_temporada || {};
     const tot = comps.total_temporada || {};
+    const squad = normalizedData.squad || [];
 
     setText("club-crest", getInitials(club.nome));
+    if (club.logoUrl) {
+      const crestEl = document.getElementById("club-crest");
+      if (crestEl) {
+        crestEl.innerHTML = `<img src="${Domain.escapeHtml(club.logoUrl)}" alt="${Domain.escapeHtml(club.nome || "Clube")}" class="club-crest-img">`;
+      }
+    }
+
     setText("club-name", club.nome || "Clube");
     setText("coach-name", club.treinador || "Treinador");
     setText("club-league", club.liga || "Liga Nacional");
@@ -327,24 +359,51 @@
     setText("career-season", club.temporada || "Temporada 1");
     setText("current-save-name", normalizedData.save_file || "Carreira Ativa");
 
-    // Subtítulos e dados dinâmicos do strip
+    // Forma Recente do Clube
+    renderFormGuide();
+
+    // 1. KPI Liga
     setText("strip-league-name", club.liga || "Liga Nacional");
+    setText("stat-league-pos", liga.posicao ? `${liga.posicao}º Lugar` : "1º Lugar");
     setText("stat-league-record", `${liga.jogos || 0}J: ${liga.vitorias || 0}V ${liga.empates || 0}E ${liga.derrotas || 0}D`);
+    setText("stat-league-pts", String(liga.pontos || 0));
+    const maxPts = (liga.jogos || 0) * 3;
+    const leaguePct = maxPts > 0 ? ((liga.pontos / maxPts) * 100).toFixed(1) + "%" : "0.0%";
+    setText("stat-league-pct", leaguePct);
     setText("stat-league-sub", `${liga.jogos || 0} Jogos · ${liga.pontos || 0} Pontos${liga.posicao ? ` (${liga.posicao}º Lugar)` : ''}`);
+
+    // 2. KPI Balanço Geral
+    setText("stat-total-record", `${tot.jogos || 0}J: ${tot.vitorias || 0}V ${tot.empates || 0}E ${tot.derrotas || 0}D${tot.invicto ? " (Invicto)" : ""}`);
+    const matchesList = normalizedData.matches || [];
+    const totalGp = club.total_gols_temporada || tot.gols_pro || matchesList.reduce((acc, m) => acc + (m.gols_pro || 0), 0);
+    const totalGc = club.total_gols_contra || tot.gols_contra || matchesList.reduce((acc, m) => acc + (m.gols_contra || 0), 0);
+    const saldo = totalGp - totalGc;
+    const saldoStr = (saldo >= 0 ? "+" : "") + saldo + " SG";
+    const gPerGame = (tot.jogos || 0) > 0 ? (totalGp / tot.jogos).toFixed(2) : "0.00";
+    setText("stat-total-goals", `${totalGp} GP`);
+    setText("stat-total-conceded", `${totalGc} GC`);
+    setText("stat-total-sg", saldoStr);
+    setText("stat-goals-per-game", `${gPerGame} /j`);
+    setText("stat-total-sub", `${tot.jogos || 0} Jogos Disputados`);
+
+    // 3. KPI Poder de Fogo (Ataque)
+    setText("stat-goals-total", `${club.total_gols_elenco || 0} GP · ${club.total_assistencias_elenco || 0} Assists`);
+    const topScorer = [...squad].sort((a, b) => (b.gols || 0) - (a.gols || 0))[0];
+    const topAssister = [...squad].sort((a, b) => (b.assistencias || 0) - (a.assistencias || 0))[0];
+    setText("stat-top-scorer", topScorer && (topScorer.gols || 0) > 0 ? `${topScorer.nome} (${topScorer.gols})` : "—");
+    setText("stat-top-assister", topAssister && (topAssister.assistencias || 0) > 0 ? `${topAssister.nome} (${topAssister.assistencias})` : "—");
+    setText("stat-goals-sub", `${club.total_gols_elenco || 0} Gols Marcados`);
+
+    // 4. KPI Finanças & Grupo
+    setText("stat-squad-value", Domain.formatCurrency(club.valor_elenco_total || 0));
+    setText("stat-wage-bill", `${Domain.formatCurrency(club.folha_salarial_semanal || 0)} /sem`);
+    const avgOvrVal = squad.length > 0 ? (squad.reduce((a, p) => a + (p.overall || 0), 0) / squad.length).toFixed(1) : "—";
+    const avgAgeVal = squad.length > 0 ? (squad.reduce((a, p) => a + (p.idade || 0), 0) / squad.length).toFixed(1) : "—";
+    setText("stat-squad-averages", `${avgOvrVal} OVR · ${avgAgeVal} anos`);
+    setText("stat-squad-count-sub", `${squad.length} Jogadores no Elenco`);
 
     setText("stat-preseason-record", pre.titulo || "Concluída");
     setText("stat-preseason-sub", `${pre.nome_torneio || pre.titulo || "Torneio"} (Campeão)`);
-
-    setText("stat-total-record", `${tot.jogos || 0}J: ${tot.vitorias || 0}V ${tot.empates || 0}E ${tot.derrotas || 0}D${tot.invicto ? " (Invicto)" : ""}`);
-    setText("stat-total-sub", `${tot.jogos || 0} Jogos Disputados`);
-
-    setText("stat-squad-value", Domain.formatCurrency(club.valor_elenco_total || 0));
-    setText("stat-squad-count-sub", `${(normalizedData.squad || []).length} Jogadores no Elenco`);
-
-    setText("stat-wage-bill", `${Domain.formatCurrency(club.folha_salarial_semanal || 0)} /sem`);
-
-    setText("stat-goals-total", `${club.total_gols_elenco || 0} GP · ${club.total_assistencias_elenco || 0} Assists`);
-    setText("stat-goals-sub", `${club.total_gols_elenco || 0} Gols Marcados`);
 
     // Atualizar rodapé dinamicamente com nome do clube e treinador
     setText("footer-club-info", `${club.nome || "Clube"} (${club.treinador || "Treinador"})`);
@@ -392,12 +451,12 @@
     setText("card-preseason-prize", prePrize);
     setText("card-league-standing", leagueStanding);
 
-    // 3. Radar de Atenção do Elenco
+    // 3. Radar do Elenco (4 Colunas)
     // a) Top Artilheiros
     const topScorers = [...squad]
       .filter(p => p.gols > 0)
-      .sort((a, b) => b.gols - a.gols)
-      .slice(0, 4);
+      .sort((a, b) => b.gols - a.gols || (b.minutos || 0) - (a.minutos || 0))
+      .slice(0, 5);
 
     const scorersList = document.getElementById("radar-top-scorers");
     if (scorersList) {
@@ -413,11 +472,31 @@
       }
     }
 
-    // b) Melhores Médias (Regular / Rotativo)
+    // b) Líderes em Assistências
+    const topAssists = [...squad]
+      .filter(p => (p.assistencias || 0) > 0)
+      .sort((a, b) => (b.assistencias || 0) - (a.assistencias || 0) || (b.minutos || 0) - (a.minutos || 0))
+      .slice(0, 5);
+
+    const assistsList = document.getElementById("radar-top-assists");
+    if (assistsList) {
+      if (topAssists.length === 0) {
+        assistsList.innerHTML = `<li class="radar-item" style="color:var(--text-muted);">Nenhuma assistência registrada</li>`;
+      } else {
+        assistsList.innerHTML = topAssists.map(p => `
+          <li class="radar-item">
+            <span class="player-display-name" onclick="window.TrackerApp.openPlayerModal(${p.playerid})">${Domain.escapeHtml(p.nome)} <small style="color:var(--text-muted); font-weight:normal;">(${p.posicao_principal})</small></span>
+            <strong style="color:var(--brand-cyan); font-family:var(--font-mono);">${p.assistencias} assists</strong>
+          </li>
+        `).join("");
+      }
+    }
+
+    // c) Maiores Notas Médias (mín. 150 min)
     const topRatings = [...squad]
-      .filter(p => (p.confianca_amostra_canonica === "alta" || p.confianca_amostra_canonica === "moderada") && p.nota_media > 0)
+      .filter(p => (p.minutos || 0) >= 150 && p.nota_media > 0)
       .sort((a, b) => b.nota_media - a.nota_media)
-      .slice(0, 4);
+      .slice(0, 5);
 
     const ratingsList = document.getElementById("radar-top-ratings");
     if (ratingsList) {
@@ -427,51 +506,42 @@
         ratingsList.innerHTML = topRatings.map(p => `
           <li class="radar-item">
             <span class="player-display-name" onclick="window.TrackerApp.openPlayerModal(${p.playerid})">${Domain.escapeHtml(p.nome)} <small style="color:var(--text-muted); font-weight:normal;">(${p.posicao_principal})</small></span>
-            <strong style="color:var(--brand-cyan); font-family:var(--font-mono);">${Domain.formatRating(p.nota_media)}</strong>
+            <span class="rating-badge ${Domain.getRatingBadgeClass(p.nota_media)}">${Domain.formatRating(p.nota_media)}</span>
           </li>
         `).join("");
       }
     }
 
-    // c) Pouca Minutagem (Em Observação: poucos minutos)
-    const shortSample = [...squad]
-      .filter(p => p.confianca_amostra_canonica === "baixa" && p.jogos > 0)
-      .sort((a, b) => a.minutos - b.minutos)
-      .slice(0, 4);
-
-    const shortList = document.getElementById("radar-short-sample");
-    if (shortList) {
-      if (shortSample.length === 0) {
-        shortList.innerHTML = `<li class="radar-item" style="color:var(--text-muted);">Todos com minutagem regular</li>`;
-      } else {
-        shortList.innerHTML = shortSample.map(p => `
-          <li class="radar-item">
-            <span class="player-display-name" onclick="window.TrackerApp.openPlayerModal(${p.playerid})">${Domain.escapeHtml(p.nome)} <small style="color:var(--text-muted); font-weight:normal;">(${p.minutos}')</small></span>
-            <span class="badge badge-conf-baixa" style="font-size:10px;">Observar</span>
-          </li>
-        `).join("");
-      }
-    }
-
-    // d) Fim de Contrato (Vencendo em 1 ano ou menos)
-    const expiring = [...squad]
-      .filter(p => p.anos_contrato !== undefined && p.anos_contrato <= 1)
-      .sort((a, b) => (a.anos_contrato || 0) - (b.anos_contrato || 0))
-      .slice(0, 4);
+    // d) Alertas Contratuais & Evolução (+OVR)
+    const alerts = [...squad]
+      .filter(p => (p.anos_contrato !== undefined && p.anos_contrato <= 1) || (p.evolucao_real || 0) > 0)
+      .sort((a, b) => (b.evolucao_real || 0) - (a.evolucao_real || 0) || (a.anos_contrato || 0) - (b.anos_contrato || 0))
+      .slice(0, 5);
 
     const expiringList = document.getElementById("radar-expiring-contracts");
     if (expiringList) {
-      if (expiring.length === 0) {
-        expiringList.innerHTML = `<li class="radar-item" style="color:var(--text-muted);">Nenhum contrato em risco</li>`;
+      if (alerts.length === 0) {
+        expiringList.innerHTML = `<li class="radar-item" style="color:var(--text-muted);">Nenhum alerta</li>`;
       } else {
-        expiringList.innerHTML = expiring.map(p => `
-          <li class="radar-item">
-            <span class="player-display-name" onclick="window.TrackerApp.openPlayerModal(${p.playerid})">${Domain.escapeHtml(p.nome)}</span>
-            <span style="color:var(--sports-loss); font-weight:700; font-size:11px;">${p.contrato_fim || "1 ano"}</span>
-          </li>
-        `).join("");
+        expiringList.innerHTML = alerts.map(p => {
+          let badge = "";
+          if (p.anos_contrato !== undefined && p.anos_contrato <= 1) {
+            badge = `<span class="badge-contract-alert">${p.contrato_fim || "1 ano"}</span>`;
+          } else {
+            badge = `<span class="badge-evol">+${p.evolucao_real} OVR</span>`;
+          }
+          return `
+            <li class="radar-item">
+              <span class="player-display-name" onclick="window.TrackerApp.openPlayerModal(${p.playerid})">${Domain.escapeHtml(p.nome)}</span>
+              ${badge}
+            </li>
+          `;
+        }).join("");
       }
     }
+
+    // Renderizar campo tático da Visão Geral
+    renderTacticalPitch();
   }
 
   // ==========================================================================
@@ -541,6 +611,11 @@
     pitch.innerHTML = tokens.map(({ player, x, y }) => {
       const sector = player.setor_canonico || "meio";
       const isHigh = player.overall >= 70;
+      const ratingClass = Domain.getRatingBadgeClass(player.nota_media);
+      let statBadges = "";
+      if (player.gols > 0) statBadges += `<span class="pitch-stat-icon" title="${player.gols} gol(s)">⚽${player.gols}</span>`;
+      if (player.assistencias > 0) statBadges += `<span class="pitch-stat-icon" title="${player.assistencias} assistência(s)">👟${player.assistencias}</span>`;
+
       return `
         <div class="pitch-player-token ${sector}" style="top: ${y}%; left: ${x}%;" onclick="window.TrackerApp.openPlayerModal(${player.playerid})" title="${Domain.escapeHtml(player.nome)} (${Domain.escapeHtml(player.posicao_principal)})">
           <div class="pitch-token-badge">
@@ -550,6 +625,8 @@
           <div class="pitch-token-card">
             <span class="pitch-token-name">${Domain.escapeHtml(player.nome)}</span>
             <span class="pitch-token-rating ${isHigh ? 'high' : ''}">${player.overall}</span>
+            <span class="rating-badge ${ratingClass}" style="font-size:9.5px; padding:1px 3px;" title="Nota Média">${Domain.formatRating(player.nota_media)}</span>
+            ${statBadges}
           </div>
         </div>
       `;
@@ -562,6 +639,7 @@
   function renderSquadTab() {
     const squad = normalizedData.squad || [];
     const tbody = document.getElementById("squad-table-body");
+    const thead = document.getElementById("squad-table-head");
     if (!tbody) return;
 
     // Aplicar filtros e ordenação via FCManagerDomain
@@ -570,69 +648,152 @@
 
     setText("squad-count-badge", `${sorted.length} / ${squad.length}`);
 
-    // Atualizar indicadores visuais de ordenação
-    document.querySelectorAll("#squad-table th.sortable").forEach(th => {
-      const field = th.getAttribute("data-sort");
-      const indicator = th.querySelector(".sort-indicator");
-      if (indicator) {
-        if (squadFilters.sortBy === field) {
-          indicator.textContent = squadFilters.sortOrder === "asc" ? "▲" : "▼";
-        } else {
-          indicator.textContent = "";
-        }
+    // Renderizar cabeçalho da tabela conforme squadViewMode
+    if (thead) {
+      if (squadViewMode === "contracts") {
+        thead.innerHTML = `
+          <tr>
+            <th class="cell-num">Nº</th>
+            <th>Jogador</th>
+            <th>Pos</th>
+            <th class="cell-num sortable" data-sort="idade" title="Ordenar por Idade">Idade <span class="sort-indicator"></span></th>
+            <th class="cell-num sortable" data-sort="overall" title="Ordenar por Overall">OVR <span class="sort-indicator"></span></th>
+            <th class="cell-num sortable" data-sort="potencial" title="Ordenar por Potencial">POT <span class="sort-indicator"></span></th>
+            <th class="cell-num sortable" data-sort="margem_potencial" title="Ordenar por Margem">Margem <span class="sort-indicator"></span></th>
+            <th class="cell-num sortable" data-sort="valor_mercado" title="Ordenar por Valor">Valor de Mercado <span class="sort-indicator"></span></th>
+            <th class="cell-num sortable" data-sort="salario" title="Ordenar por Salário">Salário Semanal <span class="sort-indicator"></span></th>
+            <th class="cell-num sortable" data-sort="contrato_fim" title="Ordenar por Fim de Contrato">Fim de Contrato <span class="sort-indicator"></span></th>
+          </tr>
+        `;
+      } else {
+        thead.innerHTML = `
+          <tr>
+            <th class="cell-num">Nº</th>
+            <th>Jogador</th>
+            <th>Pos</th>
+            <th class="cell-num sortable" data-sort="idade" title="Ordenar por Idade">Idade <span class="sort-indicator"></span></th>
+            <th class="cell-num sortable" data-sort="overall" title="Ordenar por Overall">OVR <span class="sort-indicator"></span></th>
+            <th class="cell-num sortable" data-sort="jogos" title="Ordenar por Jogos">J (Tit/Sub) <span class="sort-indicator"></span></th>
+            <th class="cell-num sortable" data-sort="minutos" title="Ordenar por Minutos">Min <span class="sort-indicator"></span></th>
+            <th class="cell-num sortable" data-sort="pct_minutos" title="Ordenar por % Min">% Min <span class="sort-indicator"></span></th>
+            <th class="cell-num sortable" data-sort="gols" title="Ordenar por Gols">Gols <span class="sort-indicator"></span></th>
+            <th class="cell-num sortable" data-sort="assistencias" title="Ordenar por Assistências">Assists <span class="sort-indicator"></span></th>
+            <th class="cell-num sortable" data-sort="ga_por_90" title="Ordenar por G+A/90">G+A/90 <span class="sort-indicator"></span></th>
+            <th class="cell-num sortable" data-sort="nota_media" title="Ordenar por Nota">Nota <span class="sort-indicator"></span></th>
+            <th>Status Tático</th>
+          </tr>
+        `;
       }
-    });
+
+      // Conectar listeners de ordenação
+      thead.querySelectorAll("th.sortable").forEach(th => {
+        const field = th.getAttribute("data-sort");
+        const indicator = th.querySelector(".sort-indicator");
+        if (indicator) {
+          if (squadFilters.sortBy === field) {
+            indicator.textContent = squadFilters.sortOrder === "asc" ? "▲" : "▼";
+          } else {
+            indicator.textContent = "";
+          }
+        }
+        th.style.cursor = "pointer";
+        th.onclick = () => {
+          if (squadFilters.sortBy === field) {
+            squadFilters.sortOrder = squadFilters.sortOrder === "asc" ? "desc" : "asc";
+          } else {
+            squadFilters.sortBy = field;
+            squadFilters.sortOrder = (field === "idade" || field === "numero") ? "asc" : "desc";
+          }
+          renderSquadTab();
+        };
+      });
+    }
 
     if (sorted.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="14" style="text-align:center; padding: 28px; color: var(--text-muted);">Nenhum jogador encontrado para os critérios selecionados.</td></tr>`;
+      const colSpan = squadViewMode === "contracts" ? 10 : 13;
+      tbody.innerHTML = `<tr><td colspan="${colSpan}" style="text-align:center; padding: 28px; color: var(--text-muted);">Nenhum jogador encontrado para os critérios selecionados.</td></tr>`;
       return;
     }
 
-    tbody.innerHTML = sorted.map(p => {
-      const posSector = p.setor_canonico || "meio";
-      const confBadgeClass = `badge-conf-${p.confianca_amostra_canonica || "nula"}`;
-      const confLabel = p.confianca_amostra_canonica === "alta" ? "Regular" :
-                        p.confianca_amostra_canonica === "moderada" ? "Rotativo" :
-                        p.confianca_amostra_canonica === "baixa" ? "Amostra Curta" : "Sem Minutos";
+    if (squadViewMode === "contracts") {
+      tbody.innerHTML = sorted.map(p => {
+        const posSector = p.setor_canonico || "meio";
+        const margin = p.margem_potencial !== undefined ? p.margem_potencial : ((p.potencial || 0) - (p.overall || 0));
+        const isExpiring = p.anos_contrato !== undefined && p.anos_contrato <= 1;
+        const contractBadge = isExpiring ? `<span class="badge-contract-alert">Último Ano</span>` : "";
 
-      const evolRealDisplay = p.evolucao_real > 0 ? `+${p.evolucao_real}` : (p.evolucao_real || 0);
-      const evolColor = p.evolucao_real > 0 ? "var(--sports-win)" : "var(--text-muted)";
-
-      return `
-        <tr tabindex="0" role="button" aria-label="Ver ficha de ${Domain.escapeHtml(p.nome)}" onclick="window.TrackerApp.openPlayerModal(${p.playerid})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); window.TrackerApp.openPlayerModal(${p.playerid});}">
-          <td class="cell-num">
-            <span class="player-num-circle">${p.numero || "-"}</span>
-          </td>
-          <td>
-            <div class="player-names-cell">
-              <div>
-                <span class="player-display-name">${Domain.escapeHtml(p.nome)}</span>
-                <div class="player-meta-inline">${Domain.escapeHtml(p.nacionalidade)} · ${p.idade} anos</div>
+        return `
+          <tr tabindex="0" role="button" aria-label="Ver ficha de ${Domain.escapeHtml(p.nome)}" onclick="window.TrackerApp.openPlayerModal(${p.playerid})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); window.TrackerApp.openPlayerModal(${p.playerid});}">
+            <td class="cell-num"><span class="player-num-circle">${p.numero || "-"}</span></td>
+            <td>
+              <div class="player-names-cell">
+                <div>
+                  <span class="player-display-name">${Domain.escapeHtml(p.nome)}</span>
+                  <div class="player-meta-inline">${Domain.escapeHtml(p.nacionalidade || "")}</div>
+                </div>
               </div>
-            </div>
-          </td>
-          <td>
-            <span class="badge badge-pos ${posSector}">${Domain.escapeHtml(p.posicao_principal)}</span>
-          </td>
-          <td class="cell-num cell-bold">${p.overall}</td>
-          <td class="cell-num"><span class="badge badge-pot">${p.potencial}</span></td>
-          <td class="cell-num cell-bold" style="color:${evolColor};">${evolRealDisplay}</td>
-          <td class="cell-num">${p.jogos} <span style="font-size:11px; color:var(--text-muted);">(${p.jogos_titular}T/${p.jogos_reserva}R)</span></td>
-          <td class="cell-num cell-bold">${p.minutos}'</td>
-          <td class="cell-num cell-bold" style="${p.gols > 0 ? 'color: var(--sports-win);' : ''}">${p.gols}</td>
-          <td class="cell-num" style="${p.assistencias > 0 ? 'color: var(--brand-cyan);' : ''}">${p.assistencias}</td>
-          <td class="cell-num cell-bold" style="${p.nota_media >= 7.5 ? 'color: var(--sports-win);' : ''}">${Domain.formatRating(p.nota_media)}</td>
-          <td><span class="badge" style="background:#1e293b; color:#f1f5f9;">${Domain.escapeHtml(p.status_elenco)}</span></td>
-          <td><span style="font-size:12px; color:var(--text-secondary);">${Domain.escapeHtml(p.status_utilizacao)}</span></td>
-          <td>
-            <div style="display:flex; flex-direction:column; gap:2px;">
-              <span style="font-size:12.5px; font-weight:600;">${Domain.escapeHtml(p.recomendacao_sistema)}</span>
-              <span class="badge ${confBadgeClass}" style="align-self:flex-start; font-size:10px;">${confLabel}</span>
-            </div>
-          </td>
-        </tr>
-      `;
-    }).join("");
+            </td>
+            <td><span class="badge badge-pos ${posSector}">${Domain.escapeHtml(p.posicao_principal)}</span></td>
+            <td class="cell-num">${p.idade}</td>
+            <td class="cell-num cell-bold">${p.overall}</td>
+            <td class="cell-num"><span class="badge badge-pot">${p.potencial}</span></td>
+            <td class="cell-num cell-bold" style="color:var(--brand-cyan);">+${margin}</td>
+            <td class="cell-num cell-bold" style="color:var(--brand-cyan);">${Domain.formatCurrency(p.valor_mercado || 0)}</td>
+            <td class="cell-num">${Domain.formatCurrency(p.salario || 0)} /sem</td>
+            <td>${Domain.escapeHtml(String(p.contrato_fim || "-"))} ${contractBadge}</td>
+          </tr>
+        `;
+      }).join("");
+    } else {
+      tbody.innerHTML = sorted.map(p => {
+        const posSector = p.setor_canonico || "meio";
+        const evolBadge = p.evolucao_real > 0 ? `<span class="badge-evol">+${p.evolucao_real}</span>` : "";
+        const secPosBadge = p.posicoes_secundarias && p.posicoes_secundarias !== "—" && p.posicoes_secundarias !== "-"
+          ? `<span class="badge-sec-pos">${Domain.escapeHtml(p.posicoes_secundarias)}</span>` : "";
+
+        let statusClass = "reserve";
+        let statusLabel = "Reserva";
+        if (p.hierarquia_tatica === "titular" || p.jogos_titular >= 2 || (p.minutos || 0) >= 200) {
+          statusClass = "starter";
+          statusLabel = "Titular";
+        } else if ((p.minutos || 0) >= 80 || (p.jogos_reserva || 0) > 0) {
+          statusClass = "rotation";
+          statusLabel = "Rotação";
+        } else if ((p.minutos || 0) === 0) {
+          statusClass = "unplayed";
+          statusLabel = "Sem Minutos";
+        }
+
+        const ratingClass = Domain.getRatingBadgeClass(p.nota_media);
+        const ga90 = p.ga_por_90 !== undefined ? p.ga_por_90 : (p.minutos > 0 ? (((p.gols || 0) + (p.assistencias || 0)) * 90 / p.minutos) : 0);
+
+        return `
+          <tr tabindex="0" role="button" aria-label="Ver ficha de ${Domain.escapeHtml(p.nome)}" onclick="window.TrackerApp.openPlayerModal(${p.playerid})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); window.TrackerApp.openPlayerModal(${p.playerid});}">
+            <td class="cell-num"><span class="player-num-circle">${p.numero || "-"}</span></td>
+            <td>
+              <div class="player-names-cell">
+                <div>
+                  <span class="player-display-name">${Domain.escapeHtml(p.nome)}</span>
+                  ${secPosBadge}
+                  <div class="player-meta-inline">${Domain.escapeHtml(p.nacionalidade || "")}</div>
+                </div>
+              </div>
+            </td>
+            <td><span class="badge badge-pos ${posSector}">${Domain.escapeHtml(p.posicao_principal)}</span></td>
+            <td class="cell-num">${p.idade}</td>
+            <td class="cell-num cell-bold">${p.overall} ${evolBadge}</td>
+            <td class="cell-num">${p.jogos} <small style="color:var(--text-muted);">(${p.jogos_titular}T/${p.jogos_reserva}R)</small></td>
+            <td class="cell-num cell-bold">${p.minutos}'</td>
+            <td class="cell-num">${p.pct_minutos || 0}%</td>
+            <td class="cell-num cell-bold" style="${p.gols > 0 ? 'color: var(--sports-win);' : ''}">${p.gols}</td>
+            <td class="cell-num" style="${p.assistencias > 0 ? 'color: var(--brand-cyan);' : ''}">${p.assistencias}</td>
+            <td class="cell-num">${Domain.formatNumber(ga90)}</td>
+            <td class="cell-num"><span class="rating-badge ${ratingClass}">${Domain.formatRating(p.nota_media)}</span></td>
+            <td><span class="badge-status-tactical ${statusClass}">${statusLabel}</span></td>
+          </tr>
+        `;
+      }).join("");
+    }
   }
 
   // ==========================================================================
@@ -650,23 +811,40 @@
 
     let filtered = matches;
     if (matchesCompFilter !== "all") {
-      filtered = matches.filter(m => {
+      filtered = filtered.filter(m => {
         const c = (m.competicao || "").toLowerCase().trim();
         const f = matchesCompFilter.toLowerCase().trim();
         return c.includes(f) || f.includes(c);
       });
     }
 
+    if (matchesVenueFilter !== "all") {
+      filtered = filtered.filter(m => {
+        const mando = (m.mando || "").toLowerCase().trim();
+        if (matchesVenueFilter === "home") return mando === "casa" || mando === "home";
+        if (matchesVenueFilter === "away") return mando === "fora" || mando === "away";
+        return true;
+      });
+    }
+
     if (filtered.length === 0) {
-      container.innerHTML = `<p style="color:var(--text-muted); padding:16px;">Nenhuma partida encontrada para esta competição.</p>`;
+      container.innerHTML = `<p style="color:var(--text-muted); padding:16px;">Nenhuma partida encontrada para os filtros selecionados.</p>`;
       return;
     }
 
     container.innerHTML = filtered.map(m => {
       const resClass = m.resultado_css || Domain.getResultMeta(m.resultado_canonico).css;
+      const motm = Domain.getManOfTheMatch(m);
+      const motmHtml = motm ? `
+        <div class="match-motm">
+          <span class="motm-label">★ Melhor em Campo:</span>
+          <span class="player-display-name" onclick="event.stopPropagation(); window.TrackerApp.openPlayerModal(${motm.playerid})">${Domain.escapeHtml(motm.nome)}</span>
+          <span class="rating-badge ${Domain.getRatingBadgeClass(motm.nota)}">${Domain.formatRating(motm.nota)}</span>
+        </div>
+      ` : "";
 
       return `
-        <div class="match-card">
+        <div class="match-card" tabindex="0" role="button" aria-label="Ver ficha da partida ${Domain.escapeHtml(m.mandante)} contra ${Domain.escapeHtml(m.visitante)}" onclick="window.TrackerApp.openMatchModal(${m.id})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); window.TrackerApp.openMatchModal(${m.id});}">
           <div class="match-card-top">
             <span>${Domain.escapeHtml(m.competicao)} · ${Domain.escapeHtml(m.data)}</span>
             <span class="badge badge-result ${resClass}">${Domain.escapeHtml(m.resultado)}</span>
@@ -680,7 +858,8 @@
             <div><strong>Artilheiro(s):</strong> ${Domain.escapeHtml(m.artilheiros || "Nenhum")}</div>
             <div style="color:var(--text-muted);">Goleiro: ${Domain.escapeHtml(m.goleiro || "—")}</div>
           </div>
-          <button class="btn btn-sm" style="margin-top:auto;" onclick="window.TrackerApp.openMatchModal(${m.id})">
+          ${motmHtml}
+          <button class="btn btn-sm" style="margin-top:auto;" onclick="event.stopPropagation(); window.TrackerApp.openMatchModal(${m.id})">
             Ver Ficha Técnica
           </button>
         </div>
@@ -852,7 +1031,7 @@
   }
 
   // ==========================================================================
-  // MODAL DE DETALHES DO JOGADOR
+  // MODAL DE DETALHES DO JOGADOR (DRILL-DOWN SPORTS ANALYTICS)
   // ==========================================================================
   function openPlayerModal(playerid) {
     if (!normalizedData || !normalizedData.squad) return;
@@ -871,62 +1050,92 @@
       ? logs.map(l => {
           let assistDisp = l.assistencias_partida === "N/D"
             ? `<span class="badge badge-nd">N/D</span>`
-            : l.assistencias_partida;
+            : (l.assistencias_partida || 0);
+          const ratingClass = Domain.getRatingBadgeClass(l.nota_partida);
           return `
             <tr>
               <td>${Domain.escapeHtml(l.data)}</td>
+              <td>${Domain.escapeHtml(l.competicao || "-")}</td>
               <td>${Domain.escapeHtml(l.adversario)}</td>
-              <td><span class="badge badge-pos">${Domain.escapeHtml(l.posicao_jogada)}</span></td>
+              <td class="cell-num">${Domain.escapeHtml(l.placar || "-")}</td>
               <td class="cell-num cell-bold">${l.minutos}'</td>
               <td class="cell-num cell-bold" style="${l.gols_partida > 0 ? 'color:var(--sports-win);' : ''}">${l.gols_partida || 0}</td>
               <td class="cell-num">${assistDisp}</td>
-              <td class="cell-num cell-bold">${Domain.formatRating(l.nota_partida)}</td>
+              <td class="cell-num"><span class="rating-badge ${ratingClass}">${Domain.formatRating(l.nota_partida)}</span></td>
             </tr>
           `;
         }).join("")
-      : `<tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:16px;">Nenhuma partida registrada nesta carreira.</td></tr>`;
+      : `<tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:16px;">Atleta ainda não atuou em partidas nesta temporada.</td></tr>`;
+
+    const per90Gols = Domain.formatNumber(player.gols_por_90 || 0);
+    const calculatedAssists90 = player.assistencias_por_90 !== undefined
+      ? player.assistencias_por_90
+      : (player.minutos > 0 ? (player.assistencias * 90 / player.minutos) : 0);
+    const per90Assists = Domain.formatNumber(calculatedAssists90);
+    const per90GA = Domain.formatNumber(player.ga_por_90 || 0);
+    const pctMin = player.pct_minutos || 0;
 
     body.innerHTML = `
+      <div class="metrics-per90-grid">
+        <div class="metric-per90-box">
+          <div class="metric-per90-val">${per90Gols}</div>
+          <div class="metric-per90-label">Gols / 90</div>
+        </div>
+        <div class="metric-per90-box">
+          <div class="metric-per90-val">${per90Assists}</div>
+          <div class="metric-per90-label">Assists / 90</div>
+        </div>
+        <div class="metric-per90-box">
+          <div class="metric-per90-val">${per90GA}</div>
+          <div class="metric-per90-label">G+A / 90</div>
+        </div>
+        <div class="metric-per90-box">
+          <div class="metric-per90-val">${pctMin}%</div>
+          <div class="metric-per90-label">% Minutos Jogados</div>
+        </div>
+      </div>
+
       <div class="grid-2col">
         <div class="detail-block">
           <div class="detail-block-title">Identidade & Contrato</div>
           <div class="detail-row"><span class="detail-label">Nome Completo</span><span class="detail-val">${Domain.escapeHtml(player.nome_completo || player.nome)}</span></div>
-          <div class="detail-row"><span class="detail-label">Nacionalidade</span><span class="detail-val">${Domain.escapeHtml(player.nacionalidade)}</span></div>
+          <div class="detail-row"><span class="detail-label">Nacionalidade</span><span class="detail-val">${Domain.escapeHtml(player.nacionalidade || "-")}</span></div>
           <div class="detail-row"><span class="detail-label">Idade / Nasc.</span><span class="detail-val">${player.idade} anos (${Domain.escapeHtml(player.data_nascimento || "-")})</span></div>
           <div class="detail-row"><span class="detail-label">Físico</span><span class="detail-val">${player.altura} cm · ${player.peso} kg</span></div>
-          <div class="detail-row"><span class="detail-label">Pé Preferido</span><span class="detail-val">${Domain.escapeHtml(player.pe_preferido)} (Perna Ruim: ${player.perna_ruim}★)</span></div>
+          <div class="detail-row"><span class="detail-label">Pé Preferido</span><span class="detail-val">${Domain.escapeHtml(player.pe_preferido || "-")} (Perna Ruim: ${player.perna_ruim || "-"}★)</span></div>
           <div class="detail-row"><span class="detail-label">Valor de Mercado</span><span class="detail-val" style="color:var(--brand-cyan);">${Domain.formatCurrency(player.valor_mercado || 0)}</span></div>
           <div class="detail-row"><span class="detail-label">Salário Semanal</span><span class="detail-val">${Domain.formatCurrency(player.salario || 0)} /sem</span></div>
           <div class="detail-row"><span class="detail-label">Multa Rescisória</span><span class="detail-val">${Domain.escapeHtml(player.multa_texto || "Sem multa")}</span></div>
-          <div class="detail-row"><span class="detail-label">Vencimento Contrato</span><span class="detail-val">${Domain.escapeHtml(player.contrato_fim || "-")} (${player.anos_contrato || 0} ano(s) restantes)</span></div>
+          <div class="detail-row"><span class="detail-label">Vencimento Contrato</span><span class="detail-val">${Domain.escapeHtml(String(player.contrato_fim || "-"))} (${player.anos_contrato || 0} ano(s) restantes)</span></div>
         </div>
 
         <div class="detail-block">
-          <div class="detail-block-title">Status, Utilização & Avaliação</div>
-          <div class="detail-row"><span class="detail-label">Hierarquia</span><span class="detail-val">${Domain.escapeHtml(player.status_elenco)}</span></div>
-          <div class="detail-row"><span class="detail-label">Utilização Real</span><span class="detail-val">${Domain.escapeHtml(player.status_utilizacao)}</span></div>
-          <div class="detail-row"><span class="detail-label">Situação Tática</span><span class="detail-val" style="color:var(--brand-cyan);">${Domain.escapeHtml(player.recomendacao_sistema)}</span></div>
-          <div class="detail-row"><span class="detail-label">Minutagem</span><span class="detail-val">${Domain.escapeHtml(player.confianca_recomendacao)}</span></div>
-          <div class="detail-row"><span class="detail-label">Overall Atual / Inicial</span><span class="detail-val">${player.overall} (Inicial: ${player.overall_inicial})</span></div>
-          <div class="detail-row"><span class="detail-label">Potencial / Margem</span><span class="detail-val">${player.potencial} (+${player.margem_potencial})</span></div>
-          <div class="detail-row"><span class="detail-label">Evolução Real no Save</span><span class="detail-val" style="color:var(--sports-win); font-weight:700;">+${player.evolucao_real} OVR</span></div>
-          <div class="detail-row"><span class="detail-label">Amostra de Jogos</span><span class="detail-val">${Domain.escapeHtml(player.amostra_label || "-")}</span></div>
-          <div class="detail-row"><span class="detail-label">Análise Técnica</span><span class="detail-val" style="font-size:12px; color:var(--text-muted);">${Domain.escapeHtml(player.motivo_recomendacao || "-")}</span></div>
+          <div class="detail-block-title">Status Técnico & Atributos</div>
+          <div class="detail-row"><span class="detail-label">Posição Principal</span><span class="detail-val"><span class="badge badge-pos ${player.setor_canonico || 'meio'}">${Domain.escapeHtml(player.posicao_principal)}</span></span></div>
+          <div class="detail-row"><span class="detail-label">Posições Secundárias</span><span class="detail-val">${Domain.escapeHtml(player.posicoes_secundarias || "—")}</span></div>
+          <div class="detail-row"><span class="detail-label">Overall Atual / Inicial</span><span class="detail-val">${player.overall} (Inicial: ${player.overall_inicial || player.overall})</span></div>
+          <div class="detail-row"><span class="detail-label">Potencial / Margem</span><span class="detail-val">${player.potencial} (+${player.margem_potencial || 0})</span></div>
+          <div class="detail-row"><span class="detail-label">Evolução Real na Carreira</span><span class="detail-val" style="color:var(--sports-win); font-weight:700;">+${player.evolucao_real || 0} OVR</span></div>
+          <div class="detail-row"><span class="detail-label">Jogos na Temporada</span><span class="detail-val">${player.jogos || 0} (${player.jogos_titular || 0} Titular / ${player.jogos_reserva || 0} Reserva)</span></div>
+          <div class="detail-row"><span class="detail-label">Minutos Totais</span><span class="detail-val">${player.minutos || 0}'</span></div>
+          <div class="detail-row"><span class="detail-label">Participações em Gols</span><span class="detail-val" style="color:var(--brand-cyan);">${player.gols || 0} Gols · ${player.assistencias || 0} Assists</span></div>
+          <div class="detail-row"><span class="detail-label">Nota Média</span><span class="detail-val"><span class="rating-badge ${Domain.getRatingBadgeClass(player.nota_media)}">${Domain.formatRating(player.nota_media)}</span></span></div>
         </div>
       </div>
 
       <div class="detail-block">
-        <div class="detail-block-title">Histórico de Atuações na Temporada</div>
+        <div class="detail-block-title">Histórico de Partidas do Atleta</div>
         <div class="table-responsive">
           <table class="data-table">
             <thead>
               <tr>
                 <th>Data</th>
+                <th>Competição</th>
                 <th>Adversário</th>
-                <th>Posição</th>
+                <th class="cell-num">Placar</th>
                 <th class="cell-num">Minutos</th>
                 <th class="cell-num">Gols</th>
-                <th class="cell-num">Assistências</th>
+                <th class="cell-num">Assists</th>
                 <th class="cell-num">Nota</th>
               </tr>
             </thead>
@@ -962,33 +1171,20 @@
     if (!body) return;
 
     const escalacao = match.escalacao || [];
-    const escalacaoHtml = escalacao.map(e => {
-      const assistVal = e.assistencias_partida === "N/D" ? `<span class="badge badge-nd">N/D</span>` : e.assistencias_partida;
+    const starters = escalacao.filter(e => {
+      const pos = String(e.posicao_jogada || e.posicao || "").toUpperCase();
+      return !pos.includes("(SUB)");
+    });
+    const substitutes = escalacao.filter(e => {
+      const pos = String(e.posicao_jogada || e.posicao || "").toUpperCase();
+      return pos.includes("(SUB)");
+    });
+
+    function renderLineupTable(list) {
+      if (!list || list.length === 0) {
+        return `<p style="color:var(--text-muted); font-size:12px; padding:8px;">Nenhum atleta nesta categoria.</p>`;
+      }
       return `
-        <tr>
-          <td class="cell-num">${e.numero || '-'}</td>
-          <td><strong class="player-display-name" onclick="window.TrackerApp.openPlayerModal(${e.playerid})">${Domain.escapeHtml(e.nome)}</strong></td>
-          <td><span class="badge badge-pos">${Domain.escapeHtml(e.posicao_jogada)}</span></td>
-          <td class="cell-num cell-bold">${e.minutos}'</td>
-          <td class="cell-num cell-bold" style="${e.gols_partida > 0 ? 'color:var(--sports-win);' : ''}">${e.gols_partida || 0}</td>
-          <td class="cell-num">${assistVal}</td>
-          <td class="cell-num cell-bold" style="${e.nota_partida >= 7.5 ? 'color:var(--sports-win);' : ''}">${Domain.formatRating(e.nota_partida)}</td>
-        </tr>
-      `;
-    }).join("");
-
-    body.innerHTML = `
-      <div class="detail-block">
-        <div class="detail-block-title">Resumo Técnico do Confronto</div>
-        <div class="detail-row"><span class="detail-label">Competição</span><span class="detail-val">${Domain.escapeHtml(match.competicao)}</span></div>
-        <div class="detail-row"><span class="detail-label">Data</span><span class="detail-val">${Domain.escapeHtml(match.data)}</span></div>
-        <div class="detail-row"><span class="detail-label">Placar Oficial</span><span class="detail-val" style="font-size:18px; color:var(--brand-cyan);">${Domain.escapeHtml(match.placar)}</span></div>
-        <div class="detail-row"><span class="detail-label">Artilheiros</span><span class="detail-val" style="color:var(--sports-win);">${Domain.escapeHtml(match.artilheiros || "Nenhum")}</span></div>
-        <div class="detail-row"><span class="detail-label">Goleiro Titular</span><span class="detail-val">${Domain.escapeHtml(match.goleiro || "-")}</span></div>
-      </div>
-
-      <div class="detail-block">
-        <div class="detail-block-title">Escalação & Desempenho Individual</div>
         <div class="table-responsive">
           <table class="data-table">
             <thead>
@@ -1003,10 +1199,62 @@
               </tr>
             </thead>
             <tbody>
-              ${escalacaoHtml}
+              ${list.map(e => {
+                const assistVal = e.assistencias_partida === "N/D" ? `<span class="badge badge-nd">N/D</span>` : (e.assistencias_partida || 0);
+                const posClean = String(e.posicao_jogada || e.posicao || "").replace(/\(SUB\)/g, "").trim();
+                const ratingClass = Domain.getRatingBadgeClass(e.nota_partida);
+                return `
+                  <tr>
+                    <td class="cell-num">${e.numero || '-'}</td>
+                    <td><strong class="player-display-name" onclick="window.TrackerApp.openPlayerModal(${e.playerid})">${Domain.escapeHtml(e.nome)}</strong></td>
+                    <td><span class="badge badge-pos">${Domain.escapeHtml(posClean)}</span></td>
+                    <td class="cell-num cell-bold">${e.minutos}'</td>
+                    <td class="cell-num cell-bold" style="${e.gols_partida > 0 ? 'color:var(--sports-win);' : ''}">${e.gols_partida || 0}</td>
+                    <td class="cell-num">${assistVal}</td>
+                    <td class="cell-num"><span class="rating-badge ${ratingClass}">${Domain.formatRating(e.nota_partida)}</span></td>
+                  </tr>
+                `;
+              }).join("")}
             </tbody>
           </table>
         </div>
+      `;
+    }
+
+    const motm = Domain.getManOfTheMatch(match);
+    const motmHighlight = motm ? `
+      <div class="detail-row">
+        <span class="detail-label" style="color:#f59e0b;">★ Melhor em Campo</span>
+        <span class="detail-val">
+          <strong class="player-display-name" onclick="window.TrackerApp.openPlayerModal(${motm.playerid})">${Domain.escapeHtml(motm.nome)}</strong>
+          <span class="rating-badge ${Domain.getRatingBadgeClass(motm.nota)}" style="margin-left:6px;">${Domain.formatRating(motm.nota)}</span>
+        </span>
+      </div>
+    ` : "";
+
+    body.innerHTML = `
+      <div class="detail-block">
+        <div class="detail-block-title">Resumo do Confronto</div>
+        <div class="detail-row"><span class="detail-label">Competição</span><span class="detail-val">${Domain.escapeHtml(match.competicao)}</span></div>
+        <div class="detail-row"><span class="detail-label">Data</span><span class="detail-val">${Domain.escapeHtml(match.data)}</span></div>
+        <div class="detail-row"><span class="detail-label">Placar Oficial</span><span class="detail-val" style="font-size:18px; color:var(--brand-cyan);">${Domain.escapeHtml(match.placar)}</span></div>
+        <div class="detail-row"><span class="detail-label">Artilheiros</span><span class="detail-val" style="color:var(--sports-win);">${Domain.escapeHtml(match.artilheiros || "Nenhum")}</span></div>
+        <div class="detail-row"><span class="detail-label">Goleiro</span><span class="detail-val">${Domain.escapeHtml(match.goleiro || "-")}</span></div>
+        ${motmHighlight}
+      </div>
+
+      <div class="detail-block">
+        <div class="lineup-section-title">
+          <span>Titulares (${starters.length})</span>
+        </div>
+        ${renderLineupTable(starters)}
+      </div>
+
+      <div class="detail-block">
+        <div class="lineup-section-title">
+          <span>Reservas Utilizados (${substitutes.length})</span>
+        </div>
+        ${substitutes.length > 0 ? renderLineupTable(substitutes) : '<p style="color:var(--text-muted); padding:10px 0; font-size:12.5px;">Nenhuma substituição realizada nesta partida.</p>'}
       </div>
     `;
 
@@ -1073,6 +1321,37 @@
   }
 
   function setupEventListeners() {
+    // Alternador de Visão da Tabela (Desempenho vs Contratos)
+    const btnPerf = document.getElementById("btn-view-performance");
+    const btnContr = document.getElementById("btn-view-contracts");
+    if (btnPerf && btnContr) {
+      btnPerf.addEventListener("click", () => {
+        squadViewMode = "performance";
+        btnPerf.classList.add("active");
+        btnPerf.setAttribute("aria-selected", "true");
+        btnContr.classList.remove("active");
+        btnContr.setAttribute("aria-selected", "false");
+        renderSquadTab();
+      });
+      btnContr.addEventListener("click", () => {
+        squadViewMode = "contracts";
+        btnContr.classList.add("active");
+        btnContr.setAttribute("aria-selected", "true");
+        btnPerf.classList.remove("active");
+        btnPerf.setAttribute("aria-selected", "false");
+        renderSquadTab();
+      });
+    }
+
+    // Filtro Rápido de Minutagem Relevante (>= 150 min)
+    const minMinToggle = document.getElementById("squad-min-minutes-toggle");
+    if (minMinToggle) {
+      minMinToggle.addEventListener("change", e => {
+        squadFilters.minMinutesOnly = e.target.checked;
+        renderSquadTab();
+      });
+    }
+
     // Filtros do Elenco
     const squadSearch = document.getElementById("squad-search");
     if (squadSearch) {
@@ -1125,6 +1404,14 @@
     if (matchesComp) {
       matchesComp.addEventListener("change", e => {
         matchesCompFilter = e.target.value;
+        renderMatchesGrid();
+      });
+    }
+
+    const matchesVenue = document.getElementById("matches-venue-filter");
+    if (matchesVenue) {
+      matchesVenue.addEventListener("change", e => {
+        matchesVenueFilter = e.target.value;
         renderMatchesGrid();
       });
     }
@@ -1258,7 +1545,12 @@
     showToast,
     getAppState: () => currentState,
     getNormalizedData: () => normalizedData,
-    exportSquadToCsvClientSide
+    exportSquadToCsvClientSide,
+    renderSquadTab,
+    setSquadViewMode: mode => {
+      squadViewMode = mode;
+      renderSquadTab();
+    }
   };
 
 })(window, document);
