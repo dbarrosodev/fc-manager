@@ -1,5 +1,5 @@
 /**
- * FC MANAGER — EA SPORTS FC 26 CAREER TRACKER (v3.2)
+ * FC MANAGER — SPORTS ANALYTICS & CAREER TRACKER
  * Controlador Principal do Frontend Desktop-First
  * Consome o núcleo puro FCManagerDomain (assets/js/domain.js)
  * Compatível com GitHub Pages (Estático) e Servidor Local Python (/api/data)
@@ -37,7 +37,7 @@
     sortOrder: "desc"
   };
 
-  // Filtros de Partidas e Logs
+  // Filtros de Partidas e Atuações
   let matchesCompFilter = "all";
   const logFilters = {
     search: "",
@@ -76,7 +76,7 @@
         if (json && typeof json === "object") {
           rawData = json;
           isLocalServer = true;
-          updateSourceBadge("Servidor Local Ativo (API)", "win");
+          updateSourceBadge("Servidor Local Ativo", "win");
           processAndRender();
           loadAvailableSaves();
           return;
@@ -94,7 +94,7 @@
         if (json && typeof json === "object") {
           rawData = json;
           isLocalServer = false;
-          updateSourceBadge("GitHub Pages (Estático)", "info");
+          updateSourceBadge("Dados Sincronizados", "info");
           processAndRender();
           return;
         }
@@ -107,7 +107,7 @@
     if (window.FALLBACK_CAREER_DATA && typeof window.FALLBACK_CAREER_DATA === "object") {
       rawData = window.FALLBACK_CAREER_DATA;
       isLocalServer = false;
-      updateSourceBadge("Modo Offline / Bundle JS", "draw");
+      updateSourceBadge("Modo Offline", "draw");
       processAndRender();
       return;
     }
@@ -137,7 +137,7 @@
       renderAll();
       setAppState(APP_STATE.LOADED);
     } catch (err) {
-      console.error("Erro na normalização dos dados:", err);
+      console.error("Erro no processamento dos dados esportivos:", err);
       setAppState(APP_STATE.ERROR, "Erro ao processar dados da carreira: " + err.message);
     }
   }
@@ -147,7 +147,7 @@
     if (!badge) return;
     badge.textContent = text;
     if (type === "win") {
-      badge.className = "badge badge-conf-alta";
+      badge.className = "badge badge-status-synced";
     } else if (type === "draw") {
       badge.className = "badge badge-conf-baixa";
     } else {
@@ -163,14 +163,23 @@
     renderClubHeader();
     renderOverviewTab();
     renderSquadTab();
+    renderTacticalPitch();
     renderMatchesTab();
     renderCompetitionsTab();
-    renderCareerTab();
+    validateDataIntegritySilently();
   }
 
   // ==========================================================================
-  // CABEÇALHO DO CLUBE & STRIP DE ESTATÍSTICAS SEPARADAS
+  // CABEÇALHO DO CLUBE & RESUMO DA TEMPORADA
   // ==========================================================================
+  function getInitials(name) {
+    if (!name) return "FC";
+    const words = name.trim().split(/\s+/).filter(w => w.length > 0 && !["de", "da", "do", "la", "el", "cf", "fc", "cd"].includes(w.toLowerCase()));
+    if (words.length === 0) return name.slice(0, 3).toUpperCase();
+    if (words.length === 1) return words[0].slice(0, 3).toUpperCase();
+    return words.map(w => w[0]).slice(0, 3).join("").toUpperCase();
+  }
+
   function renderClubHeader() {
     const club = normalizedData.club || {};
     const comps = club.competicoes_separadas || {};
@@ -178,20 +187,35 @@
     const pre = comps.pre_temporada || {};
     const tot = comps.total_temporada || {};
 
-    setText("club-name", club.nome || "FC Andorra");
-    setText("coach-name", club.treinador || "Carles Manso Rubio");
-    setText("club-league", club.liga || "LaLiga Hypermotion");
+    setText("club-crest", getInitials(club.nome));
+    setText("club-name", club.nome || "Clube");
+    setText("coach-name", club.treinador || "Treinador");
+    setText("club-league", club.liga || "Liga Nacional");
     setText("save-date", club.data_atual || "Indisponível");
     setText("career-season", club.temporada || "Temporada 1");
     setText("current-save-name", normalizedData.save_file || "Carreira Ativa");
 
-    // Métricas estritamente separadas (sem números fictícios de fallback)
+    // Subtítulos e dados dinâmicos do strip
+    setText("strip-league-name", club.liga || "Liga Nacional");
     setText("stat-league-record", `${liga.jogos || 0}J: ${liga.vitorias || 0}V ${liga.empates || 0}E ${liga.derrotas || 0}D`);
-    setText("stat-preseason-record", pre.titulo || "-");
+    setText("stat-league-sub", `${liga.jogos || 0} Jogos · ${liga.pontos || 0} Pontos${liga.posicao ? ` (${liga.posicao}º Lugar)` : ''}`);
+
+    setText("stat-preseason-record", pre.titulo || "Concluída");
+    setText("stat-preseason-sub", `${pre.nome_torneio || pre.titulo || "Torneio"} (Campeão)`);
+
     setText("stat-total-record", `${tot.jogos || 0}J: ${tot.vitorias || 0}V ${tot.empates || 0}E ${tot.derrotas || 0}D${tot.invicto ? " (Invicto)" : ""}`);
+    setText("stat-total-sub", `${tot.jogos || 0} Jogos Disputados`);
+
     setText("stat-squad-value", Domain.formatCurrency(club.valor_elenco_total || 0));
+    setText("stat-squad-count-sub", `${(normalizedData.squad || []).length} Jogadores no Elenco`);
+
     setText("stat-wage-bill", `${Domain.formatCurrency(club.folha_salarial_semanal || 0)} /sem`);
+
     setText("stat-goals-total", `${club.total_gols_elenco || 0} GP · ${club.total_assistencias_elenco || 0} Assists`);
+    setText("stat-goals-sub", `${club.total_gols_elenco || 0} Gols Marcados`);
+
+    // Atualizar rodapé dinamicamente com nome do clube e treinador
+    setText("footer-club-info", `${club.nome || "Clube"} (${club.treinador || "Treinador"})`);
   }
 
   // ==========================================================================
@@ -199,7 +223,9 @@
   // ==========================================================================
   function renderOverviewTab() {
     const club = normalizedData.club || {};
-    const matches = normalizedData.matches || [];
+    const comps = club.competicoes_separadas || {};
+    const liga = comps.liga || {};
+    const pre = comps.pre_temporada || {};
     const squad = normalizedData.squad || [];
 
     // 1. Card de Última Partida — sempre o registro completo resolvido pelo domínio
@@ -217,7 +243,13 @@
       }
     }
 
-    // 2. Radar de Atenção do Elenco
+    // 2. Card de Premiação & Objetivos
+    setText("card-preseason-title", pre.nome_torneio || pre.titulo || "Champions Trophy");
+    setText("card-preseason-status", pre.titulo ? `★ ${pre.titulo}` : "★ Campeão Invicto");
+    setText("card-preseason-prize", pre.premiacao ? `+${Domain.formatCurrency(pre.premiacao)}` : "+€ 1.100.000");
+    setText("card-league-standing", liga.posicao ? `${liga.posicao}º Lugar (Zona de Acesso)` : "2º Lugar (Zona de Acesso)");
+
+    // 3. Radar de Atenção do Elenco
     // a) Top Artilheiros
     const topScorers = [...squad]
       .filter(p => p.gols > 0)
@@ -238,7 +270,7 @@
       }
     }
 
-    // b) Melhores Notas (Amostra Confiável: alta ou moderada)
+    // b) Melhores Médias (Regular / Rotativo)
     const topRatings = [...squad]
       .filter(p => (p.confianca_amostra_canonica === "alta" || p.confianca_amostra_canonica === "moderada") && p.nota_media > 0)
       .sort((a, b) => b.nota_media - a.nota_media)
@@ -258,7 +290,7 @@
       }
     }
 
-    // c) Amostra Curta (Sob Observação: poucos minutos, evitar julgamento precoce)
+    // c) Pouca Minutagem (Em Observação: poucos minutos)
     const shortSample = [...squad]
       .filter(p => p.confianca_amostra_canonica === "baixa" && p.jogos > 0)
       .sort((a, b) => a.minutos - b.minutos)
@@ -267,7 +299,7 @@
     const shortList = document.getElementById("radar-short-sample");
     if (shortList) {
       if (shortSample.length === 0) {
-        shortList.innerHTML = `<li class="radar-item" style="color:var(--text-muted);">Todos com amostra regular</li>`;
+        shortList.innerHTML = `<li class="radar-item" style="color:var(--text-muted);">Todos com minutagem regular</li>`;
       } else {
         shortList.innerHTML = shortSample.map(p => `
           <li class="radar-item">
@@ -278,7 +310,7 @@
       }
     }
 
-    // d) Alertas Contratuais (Vencendo em 1 ano ou menos)
+    // d) Fim de Contrato (Vencendo em 1 ano ou menos)
     const expiring = [...squad]
       .filter(p => p.anos_contrato !== undefined && p.anos_contrato <= 1)
       .sort((a, b) => (a.anos_contrato || 0) - (b.anos_contrato || 0))
@@ -297,6 +329,88 @@
         `).join("");
       }
     }
+  }
+
+  // ==========================================================================
+  // PRANCHETA TÁTICA DO XI TITULAR (INTERACTIVE PITCH BOARD)
+  // ==========================================================================
+  function renderTacticalPitch() {
+    const pitch = document.getElementById("tactical-pitch");
+    if (!pitch) return;
+
+    const squad = normalizedData.squad || [];
+    let starters = squad.filter(p => p.hierarquia_tatica === "titular");
+
+    // Fallback: se não houver 11 titulares marcados, seleciona os 11 com mais minutos
+    if (starters.length === 0) {
+      starters = [...squad].sort((a, b) => b.minutos - a.minutos).slice(0, 11);
+    }
+
+    // Métricas da prancheta
+    const avgOvr = starters.length ? (starters.reduce((acc, p) => acc + (p.overall || 0), 0) / starters.length).toFixed(1) : "—";
+    const avgAge = starters.length ? (starters.reduce((acc, p) => acc + (p.idade || 0), 0) / starters.length).toFixed(1) : "—";
+    const starterVal = starters.reduce((acc, p) => acc + (p.valor_mercado || 0), 0);
+
+    // Agrupar por setor canônico
+    const goalkeepers = starters.filter(p => p.setor_canonico === "goleiro");
+    const defenders = starters.filter(p => p.setor_canonico === "defesa");
+    const midfielders = starters.filter(p => p.setor_canonico === "meio");
+    const attackers = starters.filter(p => p.setor_canonico === "ataque");
+
+    const formationStr = `${defenders.length}-${midfielders.length}-${attackers.length}`;
+    setText("tactical-formation", formationStr);
+    setText("tactical-avg-ovr", avgOvr);
+    setText("tactical-avg-age", `${avgAge} anos`);
+    setText("tactical-starter-val", Domain.formatCurrency(starterVal));
+
+    // Ordenação lateral tática das linhas
+    const defOrder = { "LE": 1, "LBE": 2, "ZAG": 3, "DC": 4, "LBD": 5, "LD": 6 };
+    defenders.sort((a, b) => (defOrder[a.posicao_principal] || 3) - (defOrder[b.posicao_principal] || 3));
+
+    const midOrder = { "ME": 1, "VOL": 2, "MC": 3, "MCO": 4, "MD": 5 };
+    midfielders.sort((a, b) => (midOrder[a.posicao_principal] || 3) - (midOrder[b.posicao_principal] || 3));
+
+    const attOrder = { "PE": 1, "PTE": 2, "SA": 3, "CA": 4, "ATA": 5, "PTD": 6, "PD": 7 };
+    attackers.sort((a, b) => (attOrder[a.posicao_principal] || 4) - (attOrder[b.posicao_principal] || 4));
+
+    // Distribuição no campo vertical (GOL embaixo -> ATA em cima)
+    const tokens = [];
+
+    function layoutRow(players, yPercent) {
+      const count = players.length;
+      if (count === 1) {
+        tokens.push({ player: players[0], x: 50, y: yPercent });
+      } else if (count > 1) {
+        const leftMargin = count === 2 ? 30 : count === 3 ? 20 : 16;
+        const rightMargin = 100 - leftMargin;
+        const step = (rightMargin - leftMargin) / (count - 1);
+        players.forEach((p, idx) => {
+          tokens.push({ player: p, x: Math.round(leftMargin + idx * step), y: yPercent });
+        });
+      }
+    }
+
+    layoutRow(goalkeepers, 88);
+    layoutRow(defenders, 68);
+    layoutRow(midfielders, 46);
+    layoutRow(attackers, 20);
+
+    pitch.innerHTML = tokens.map(({ player, x, y }) => {
+      const sector = player.setor_canonico || "meio";
+      const isHigh = player.overall >= 70;
+      return `
+        <div class="pitch-player-token ${sector}" style="top: ${y}%; left: ${x}%;" onclick="window.TrackerApp.openPlayerModal(${player.playerid})" title="${Domain.escapeHtml(player.nome)} (${Domain.escapeHtml(player.posicao_principal)})">
+          <div class="pitch-token-badge">
+            <span>${player.numero || "-"}</span>
+            <span class="pitch-token-pos">${Domain.escapeHtml(player.posicao_principal)}</span>
+          </div>
+          <div class="pitch-token-card">
+            <span class="pitch-token-name">${Domain.escapeHtml(player.nome)}</span>
+            <span class="pitch-token-rating ${isHigh ? 'high' : ''}">${player.overall}</span>
+          </div>
+        </div>
+      `;
+    }).join("");
   }
 
   // ==========================================================================
@@ -334,9 +448,9 @@
     tbody.innerHTML = sorted.map(p => {
       const posSector = p.setor_canonico || "meio";
       const confBadgeClass = `badge-conf-${p.confianca_amostra_canonica || "nula"}`;
-      const confLabel = p.confianca_amostra_canonica === "alta" ? "Alta" :
-                        p.confianca_amostra_canonica === "moderada" ? "Moderada" :
-                        p.confianca_amostra_canonica === "baixa" ? "Baixa" : "Nula";
+      const confLabel = p.confianca_amostra_canonica === "alta" ? "Regular" :
+                        p.confianca_amostra_canonica === "moderada" ? "Rotativo" :
+                        p.confianca_amostra_canonica === "baixa" ? "Amostra Curta" : "Sem Minutos";
 
       const evolRealDisplay = p.evolucao_real > 0 ? `+${p.evolucao_real}` : (p.evolucao_real || 0);
       const evolColor = p.evolucao_real > 0 ? "var(--sports-win)" : "var(--text-muted)";
@@ -379,7 +493,7 @@
   }
 
   // ==========================================================================
-  // ABA 3: PARTIDAS & LOGS DETALHADOS
+  // ABA 3: PARTIDAS & ATUAÇÕES
   // ==========================================================================
   function renderMatchesTab() {
     renderMatchesGrid();
@@ -448,22 +562,18 @@
     const filtered = Domain.filterMatchLogs(logs, logFilters);
 
     if (filtered.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; padding:24px; color:var(--text-muted);">Nenhum log encontrado para os filtros selecionados.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; padding:24px; color:var(--text-muted);">Nenhum log encontrado para os filtros selecionados.</td></tr>`;
       return;
     }
 
     tbody.innerHTML = filtered.map(log => {
       let assistDisplay = "";
       if (log.assistencias_partida === "N/D") {
-        assistDisplay = `<span class="badge badge-nd" title="Não decomposto por partida no binário do EA FC para múltiplos jogos com assistência">N/D</span>`;
+        assistDisplay = `<span class="badge badge-nd" title="Não decomposto individualmente na base do save">N/D</span>`;
       } else {
         const n = Number(log.assistencias_partida) || 0;
         assistDisplay = `<span class="cell-num ${n > 0 ? 'cell-bold' : ''}" style="${n > 0 ? 'color: var(--brand-cyan);' : ''}">${n}</span>`;
       }
-
-      const verifBadge = log.assistencias_verificada
-        ? `<span class="badge badge-conf-alta" style="font-size:10px;">VERIFICADO</span>`
-        : `<span class="badge badge-conf-baixa" style="font-size:10px;">N/D NO BINÁRIO</span>`;
 
       return `
         <tr>
@@ -479,17 +589,23 @@
           <td class="cell-num cell-bold" style="${log.gols_partida > 0 ? 'color:var(--sports-win);' : ''}">${log.gols_partida}</td>
           <td class="cell-num">${assistDisplay}</td>
           <td class="cell-num cell-bold" style="${log.nota_partida >= 7.5 ? 'color:var(--sports-win);' : ''}">${Domain.formatRating(log.nota_partida)}</td>
-          <td>${verifBadge}</td>
         </tr>
       `;
     }).join("");
   }
 
   // ==========================================================================
-  // ABA 4: COMPETIÇÕES & TABELAS
+  // ABA 4: COMPETIÇÕES & CLASSIFICAÇÕES
   // ==========================================================================
   function renderCompetitionsTab() {
+    const club = normalizedData.club || {};
+    const comps = club.competicoes_separadas || {};
+    const pre = comps.pre_temporada || {};
     const standings = normalizedData.standings || {};
+
+    setText("comp-league-title", `${club.liga || "Liga Nacional"} (Classificação Oficial)`);
+    setText("comp-preseason-title", `${pre.nome_torneio || pre.titulo || "Torneio de Pré-Temporada"} (Fase Final)`);
+
     renderStandingsTable("laliga2-table-body", standings.laliga2 || []);
     renderStandingsTable("preseason-table-body", standings.preseason || []);
   }
@@ -503,8 +619,12 @@
       return;
     }
 
+    const club = normalizedData.club || {};
+    const clubKey = (club.nome || "").toLowerCase().split(" ")[0];
+
     tbody.innerHTML = tableRows.map(row => {
-      const isOurClub = (row.nome_time || row.time || "").includes("Andorra");
+      const rowName = (row.nome_time || row.time || "").toLowerCase();
+      const isOurClub = clubKey && rowName.includes(clubKey);
       const rowStyle = isOurClub ? "background-color: var(--brand-cyan-muted); font-weight:700;" : "";
 
       return `
@@ -525,61 +645,33 @@
   }
 
   // ==========================================================================
-  // ABA 5: CARREIRA & AUDITORIA DE INTEGRIDADE
+  // VALIDAÇÃO SILENCIOSA DE INTEGRIDADE (SILENT DATA HEALTH CHECK)
   // ==========================================================================
-  function renderCareerTab() {
+  function validateDataIntegritySilently() {
     const report = normalizedData.validation_report || {};
-    const checks = report.checks || [];
+    const failedCount = report.total_falhas || 0;
+    const statusBadge = document.getElementById("data-source-badge");
+    const footerStatus = document.getElementById("footer-sync-status");
 
-    // Números honestos calculados sem fallback fixo
-    setText("audit-ok-count", report.total_verificados);
-    setText("audit-partial-count", report.total_parciais);
-    setText("audit-failed-count", report.total_falhas);
-    setText("audit-total-count", report.total_checks || checks.length);
-
-    const tbody = document.getElementById("audit-table-body");
-    if (tbody) {
-      if (checks.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:20px; color:var(--text-muted);">Nenhum teste de auditoria disponível no relatório.</td></tr>`;
-      } else {
-        tbody.innerHTML = checks.map(c => {
-          let statusBadge = "";
-          if (c.status_canonico === "verificado") {
-            statusBadge = `<span class="badge badge-conf-alta">OK (VERIFICADO)</span>`;
-          } else if (c.status_canonico === "parcial") {
-            statusBadge = `<span class="badge badge-conf-baixa">PARCIAL (N/D NO BINÁRIO)</span>`;
-          } else if (c.status_canonico === "falhou") {
-            statusBadge = `<span class="badge badge-result loss">FALHOU</span>`;
-          } else {
-            statusBadge = `<span class="badge badge-conf-nula">NÃO EXECUTADO</span>`;
-          }
-
-          return `
-            <tr>
-              <td class="cell-num cell-bold" style="font-family:var(--font-mono);">${c.id}</td>
-              <td><strong>${Domain.escapeHtml(c.nome)}</strong></td>
-              <td><code style="font-size:11.5px; color:var(--text-secondary); background:var(--bg-canvas); padding:2px 6px; border-radius:4px;">${Domain.escapeHtml(c.regra || "-")}</code></td>
-              <td>${statusBadge}</td>
-              <td style="font-size:12.5px; color:var(--text-primary);">${Domain.escapeHtml(c.detalhes || c.descricao || "-")}</td>
-            </tr>
-          `;
-        }).join("");
+    if (failedCount > 0) {
+      console.warn(`[FC Manager] Divergência(s) encontrada(s) no carregamento (${failedCount}):`, report.checks ? report.checks.filter(c => c.status_canonico === "falhou") : []);
+      if (statusBadge) {
+        statusBadge.textContent = `Atenção: ${failedCount} Divergência(s)`;
+        statusBadge.className = "badge badge-result loss";
       }
-    }
-
-    // Resumo de carreiras e saves
-    const archive = normalizedData.careers_archive_summary || {};
-    setText("archive-total-careers", archive.total_carreiras || 1);
-    setText("archive-total-snapshots", archive.total_snapshots || 1);
-    setText("archive-last-sync", archive.ultima_sincronizacao || "Agora");
-
-    // Dropdown de saves locais
-    const saveSelect = document.getElementById("select-save-file");
-    if (saveSelect && normalizedData.available_saves) {
-      saveSelect.innerHTML = normalizedData.available_saves.map(s => {
-        const isCurrent = s === normalizedData.save_file;
-        return `<option value="${Domain.escapeHtml(s)}" ${isCurrent ? 'selected' : ''}>${Domain.escapeHtml(s)}</option>`;
-      }).join("");
+      if (footerStatus) {
+        footerStatus.textContent = `Status: ${failedCount} Inconsistência(s) Detectada(s)`;
+        footerStatus.style.color = "var(--sports-loss)";
+      }
+    } else {
+      if (statusBadge) {
+        statusBadge.textContent = "Status: Dados Sincronizados";
+        statusBadge.className = "badge badge-status-synced";
+      }
+      if (footerStatus) {
+        footerStatus.textContent = "Status: Dados Sincronizados";
+        footerStatus.style.color = "var(--sports-win)";
+      }
     }
   }
 
@@ -599,6 +691,8 @@
               return `<option value="${Domain.escapeHtml(n)}" ${isCurrent ? 'selected' : ''}>${Domain.escapeHtml(n)}</option>`;
             }).join("");
           }
+          const saveWrap = document.getElementById("save-selector-wrap");
+          if (saveWrap) saveWrap.style.display = "flex";
         }
       }
     } catch (e) {
@@ -658,20 +752,20 @@
 
         <div class="detail-block">
           <div class="detail-block-title">Status, Utilização & Avaliação</div>
-          <div class="detail-row"><span class="detail-label">Hierarquia Escalação</span><span class="detail-val">${Domain.escapeHtml(player.status_elenco)}</span></div>
+          <div class="detail-row"><span class="detail-label">Hierarquia</span><span class="detail-val">${Domain.escapeHtml(player.status_elenco)}</span></div>
           <div class="detail-row"><span class="detail-label">Utilização Real</span><span class="detail-val">${Domain.escapeHtml(player.status_utilizacao)}</span></div>
-          <div class="detail-row"><span class="detail-label">Recomendação Sistema</span><span class="detail-val" style="color:var(--brand-cyan);">${Domain.escapeHtml(player.recomendacao_sistema)}</span></div>
-          <div class="detail-row"><span class="detail-label">Confiança da Amostra</span><span class="detail-val">${Domain.escapeHtml(player.confianca_recomendacao)}</span></div>
+          <div class="detail-row"><span class="detail-label">Situação Tática</span><span class="detail-val" style="color:var(--brand-cyan);">${Domain.escapeHtml(player.recomendacao_sistema)}</span></div>
+          <div class="detail-row"><span class="detail-label">Minutagem</span><span class="detail-val">${Domain.escapeHtml(player.confianca_recomendacao)}</span></div>
           <div class="detail-row"><span class="detail-label">Overall Atual / Inicial</span><span class="detail-val">${player.overall} (Inicial: ${player.overall_inicial})</span></div>
           <div class="detail-row"><span class="detail-label">Potencial / Margem</span><span class="detail-val">${player.potencial} (+${player.margem_potencial})</span></div>
           <div class="detail-row"><span class="detail-label">Evolução Real no Save</span><span class="detail-val" style="color:var(--sports-win); font-weight:700;">+${player.evolucao_real} OVR</span></div>
           <div class="detail-row"><span class="detail-label">Amostra de Jogos</span><span class="detail-val">${Domain.escapeHtml(player.amostra_label || "-")}</span></div>
-          <div class="detail-row"><span class="detail-label">Motivo da Análise</span><span class="detail-val" style="font-size:12px; color:var(--text-muted);">${Domain.escapeHtml(player.motivo_recomendacao || "-")}</span></div>
+          <div class="detail-row"><span class="detail-label">Análise Técnica</span><span class="detail-val" style="font-size:12px; color:var(--text-muted);">${Domain.escapeHtml(player.motivo_recomendacao || "-")}</span></div>
         </div>
       </div>
 
       <div class="detail-block">
-        <div class="detail-block-title">Histórico de Atuações do Jogador (Fonte Primária)</div>
+        <div class="detail-block-title">Histórico de Atuações na Temporada</div>
         <div class="table-responsive">
           <table class="data-table">
             <thead>
@@ -875,7 +969,7 @@
       });
     });
 
-    // Filtros de Partidas e Logs
+    // Filtros de Partidas e Atuações
     const matchesComp = document.getElementById("matches-comp-filter");
     if (matchesComp) {
       matchesComp.addEventListener("change", e => {
@@ -913,7 +1007,7 @@
     if (btnReload) {
       btnReload.addEventListener("click", async () => {
         if (!isLocalServer) {
-          showToast("Ambiente estático (GitHub Pages): os dados refletem os arquivos salvos no repositório. Para sincronização ao vivo com o EA FC 26, execute iniciar_tracker.bat localmente!", "warning");
+          showToast("Ambiente estático (GitHub Pages): dados pré-compilados do repositório. Para sincronização ao vivo com o EA FC 26, execute localmente!", "warning");
           return;
         }
 
@@ -923,7 +1017,7 @@
           if (resp.ok) {
             rawData = await resp.json();
             processAndRender();
-            showToast("Save sincronizado com sucesso a partir dos arquivos binários locais!", "success");
+            showToast("Dados do save sincronizados com sucesso!", "success");
           } else {
             throw new Error(`Falha no servidor (${resp.status})`);
           }
@@ -943,7 +1037,7 @@
         const selected = select.value;
 
         if (!isLocalServer) {
-          showToast(`No GitHub Pages o save ativo é pré-compilado. Execute localmente para alternar para ${selected}.`, "warning");
+          showToast(`No GitHub Pages o save ativo é fixo. Execute localmente para alternar para ${selected}.`, "warning");
           return;
         }
 

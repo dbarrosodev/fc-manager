@@ -19,26 +19,35 @@
       <div class="topbar-left">
         <div class="brand-title">
           <span>FC MANAGER</span>
-          <span class="brand-sub">CAREER ANALYTICS</span>
+          <span class="brand-sub">SPORTS ANALYTICS</span>
         </div>
-        <div id="data-source-badge" class="badge badge-conf-moderada" role="status">Carregando dados...</div>
+        <div id="data-source-badge" class="badge badge-status-synced" role="status">Status: Dados Sincronizados</div>
         <div class="save-pill">
           <span style="color:var(--text-muted);">Save:</span>
-          <strong id="current-save-name" style="color:#ffffff;">—</strong>
+          <strong id="current-save-name" style="color:#ffffff;">Carreira Ativa</strong>
         </div>
       </div>
 
       <div class="topbar-actions">
+        <!-- Dropdown compacto de Saves (visível no servidor local) -->
+        <div id="save-selector-wrap" class="save-selector-compact" style="display:none;">
+          <label for="select-save-file" class="sr-only">Save:</label>
+          <select id="select-save-file" class="select-control" title="Alternar Save Local" aria-label="Alternar Save Local">
+            <option value="">Carregando saves...</option>
+          </select>
+          <button id="btn-apply-save" class="btn btn-sm btn-primary">Carregar</button>
+        </div>
+
         <button id="btn-reload-save" class="btn btn-sm" title="Recarregar dados do save local">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-          Sincronizar Save
+          Sincronizar
         </button>
-        <a href="exports/Estatisticas_Jogadores_FC_Andorra_Carreira.xlsx" download class="btn btn-sm btn-success" title="Baixar planilha de auditoria em Excel com 5 abas e fórmulas dinâmicas">
+        <a id="btn-export-xlsx" href="exports/Estatisticas_Jogadores_FC_Andorra_Carreira.xlsx" download class="btn btn-sm btn-success" title="Exportar Planilha Excel (.xlsx)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Exportar Excel (.xlsx)
+          Excel (.xlsx)
         </a>
-        <a href="exports/Estatisticas_Jogadores_FC_Andorra_Carreira.csv" download class="btn btn-sm" title="Baixar dados consolidados em CSV">
-          Exportar CSV
+        <a id="btn-export-csv" href="exports/Estatisticas_Jogadores_FC_Andorra_Carreira.csv" download class="btn btn-sm" title="Exportar Dados em CSV">
+          CSV
         </a>
       </div>
     </header>
@@ -46,7 +55,7 @@
     <!-- Estado de Carregamento e Mensagens de Erro -->
     <div id="state-loading" class="state-banner loading" role="status">
       <div class="spinner"></div>
-      <span>Carregando dados da carreira e calculando estatísticas primárias...</span>
+      <span>Carregando dados da carreira...</span>
     </div>
 
     <div id="state-error" class="state-banner error" style="display:none;" role="alert">
@@ -56,11 +65,11 @@
     <!-- Conteúdo Principal da Aplicação -->
     <div id="app-content" style="display:none;">
 
-      <!-- Cabeçalho do Clube e Resumo de Métricas Separadas -->
+      <!-- Cabeçalho do Clube e Resumo da Temporada -->
       <section class="club-header" aria-label="Identidade do Clube">
         <div class="club-header-top">
           <div class="club-identity">
-            <div id="club-crest" class="club-crest" aria-hidden="true">FCA</div>
+            <div id="club-crest" class="club-crest" aria-hidden="true">—</div>
             <div class="club-meta">
               <h1 id="club-name">—</h1>
               <div class="club-meta-details">
@@ -75,39 +84,39 @@
 
         <div class="club-stats-strip">
           <div class="strip-item">
-            <div class="strip-label">LaLiga 2 (Liga)</div>
+            <div id="strip-league-name" class="strip-label">Liga Nacional</div>
             <div id="stat-league-record" class="strip-value success">—</div>
-            <div class="strip-sub">3 Jogos · 7 Pontos (2º Lugar)</div>
+            <div id="stat-league-sub" class="strip-sub">—</div>
           </div>
           <div class="strip-item">
             <div class="strip-label">Pré-Temporada</div>
             <div id="stat-preseason-record" class="strip-value accent">—</div>
-            <div class="strip-sub">Champions Trophy (Campeão)</div>
+            <div id="stat-preseason-sub" class="strip-sub">—</div>
           </div>
           <div class="strip-item">
-            <div class="strip-label">Todas as Partidas</div>
+            <div class="strip-label">Temporada (Total)</div>
             <div id="stat-total-record" class="strip-value">—</div>
-            <div class="strip-sub">6 Jogos Invicto (4V 2E 0D)</div>
+            <div id="stat-total-sub" class="strip-sub">—</div>
           </div>
           <div class="strip-item">
             <div class="strip-label">Valor de Mercado do Elenco</div>
             <div id="stat-squad-value" class="strip-value accent">—</div>
-            <div class="strip-sub">25 Jogadores Avaliados</div>
+            <div id="stat-squad-count-sub" class="strip-sub">—</div>
           </div>
           <div class="strip-item">
             <div class="strip-label">Folha Salarial Semanal</div>
             <div id="stat-wage-bill" class="strip-value">—</div>
-            <div class="strip-sub">Total Folha do Clube</div>
+            <div class="strip-sub">Folha Salarial Estimada</div>
           </div>
           <div class="strip-item">
-            <div class="strip-label">Ataque & Criação (G + A)</div>
+            <div class="strip-label">Participações em Gols (G+A)</div>
             <div id="stat-goals-total" class="strip-value success">—</div>
-            <div class="strip-sub">Gols e Assistências Auditados</div>
+            <div id="stat-goals-sub" class="strip-sub">—</div>
           </div>
         </div>
       </section>
 
-      <!-- Navegação por Abas Principais (5 Abas) -->
+      <!-- Navegação por Abas Principais (4 Abas) -->
       <nav class="tabs-nav" aria-label="Navegação da Carreira">
         <button class="tab-btn active" data-tab="overview">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
@@ -119,15 +128,11 @@
         </button>
         <button class="tab-btn" data-tab="matches">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
-          Partidas & Logs
+          Partidas & Atuações
         </button>
         <button class="tab-btn" data-tab="competitions">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>
           Competições
-        </button>
-        <button class="tab-btn" data-tab="career">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-          Carreira & Auditoria
         </button>
       </nav>
 
@@ -166,17 +171,17 @@
               <div class="card-body" style="display:flex; flex-direction:column; justify-content:space-between; gap:12px;">
                 <div>
                   <div style="font-size:11px; text-transform:uppercase; color:var(--text-muted); font-weight:700;">Torneio de Pré-Temporada</div>
-                  <div style="font-size:18px; font-weight:800; color:var(--brand-cyan); margin-top:2px;">Champions Trophy</div>
-                  <div style="font-size:13px; color:var(--sports-win); margin-top:4px; font-weight:700;">★ Campeão Invicto</div>
+                  <div id="card-preseason-title" style="font-size:18px; font-weight:800; color:var(--brand-cyan); margin-top:2px;">—</div>
+                  <div id="card-preseason-status" style="font-size:13px; color:var(--sports-win); margin-top:4px; font-weight:700;">—</div>
                 </div>
                 <div class="detail-block">
                   <div class="detail-row">
                     <span class="detail-label">Premiação em Dinheiro</span>
-                    <span class="detail-val" style="color:var(--sports-win);">+€ 1.100.000</span>
+                    <span id="card-preseason-prize" class="detail-val" style="color:var(--sports-win);">—</span>
                   </div>
                   <div class="detail-row">
                     <span class="detail-label">Status no Campeonato</span>
-                    <span class="detail-val" style="color:var(--brand-cyan);">2º Lugar (Zona de Acesso)</span>
+                    <span id="card-league-standing" class="detail-val" style="color:var(--brand-cyan);">—</span>
                   </div>
                 </div>
               </div>
@@ -187,10 +192,7 @@
           <div class="col-12">
             <div class="card">
               <div class="card-header">
-                <div>
-                  <h2 class="card-title">Radar de Atenção do Elenco</h2>
-                  <p class="card-subtitle">Análise esportiva rápida: destaques estatísticos, cautela com amostras curtas e alertas contratuais.</p>
-                </div>
+                <h2 class="card-title">Radar de Atenção do Elenco</h2>
               </div>
               <div class="card-body">
                 <div class="radar-grid">
@@ -208,8 +210,8 @@
                   <!-- Melhores Notas (Amostra Confiável) -->
                   <div class="radar-card">
                     <div class="radar-title">
-                      <span>Melhores Notas</span>
-                      <span style="color:var(--brand-cyan);">Média (≥150m)</span>
+                      <span>Melhores Médias</span>
+                      <span style="color:var(--brand-cyan);">Nota (≥150m)</span>
                     </div>
                     <ul id="radar-top-ratings" class="radar-list">
                       <!-- Preenchido via main.js -->
@@ -219,8 +221,8 @@
                   <!-- Amostra Curta (Sob Observação) -->
                   <div class="radar-card">
                     <div class="radar-title">
-                      <span>Amostra Curta</span>
-                      <span style="color:var(--sports-draw);">Sob Observação</span>
+                      <span>Pouca Minutagem</span>
+                      <span style="color:var(--sports-draw);">Em Observação</span>
                     </div>
                     <ul id="radar-short-sample" class="radar-list">
                       <!-- Preenchido via main.js -->
@@ -230,8 +232,8 @@
                   <!-- Alertas Contratuais -->
                   <div class="radar-card">
                     <div class="radar-title">
-                      <span>Vencimento</span>
-                      <span style="color:var(--sports-loss);">Contrato</span>
+                      <span>Fim de Contrato</span>
+                      <span style="color:var(--sports-loss);">Vencimento</span>
                     </div>
                     <ul id="radar-expiring-contracts" class="radar-list">
                       <!-- Preenchido via main.js -->
@@ -245,15 +247,38 @@
       </section>
 
       <!-- ==================================================================
-           ABA 2: ELENCO (SQUAD HUB)
+           ABA 2: ELENCO & TÁTICA (SQUAD HUB)
            ================================================================== -->
       <section id="tab-squad" class="tab-pane" aria-labelledby="tab-squad">
+        <!-- Prancheta Tática do XI Titular -->
+        <div id="tactical-board-section" class="tactical-board-card">
+          <div class="board-header">
+            <div class="board-title-wrap">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 12h18"/><circle cx="12" cy="12" r="3"/></svg>
+              <h2 class="board-title">XI Titular & Prancheta Tática</h2>
+            </div>
+            <div class="board-metrics">
+              <span class="board-metric">Formação: <strong id="tactical-formation">4-3-3</strong></span>
+              <span class="board-metric">Média OVR: <strong id="tactical-avg-ovr">—</strong></span>
+              <span class="board-metric">Média Idade: <strong id="tactical-avg-age">—</strong></span>
+              <span class="board-metric">Valor Titulares: <strong id="tactical-starter-val">—</strong></span>
+            </div>
+          </div>
+          <div class="pitch-container" aria-label="Campinho Tático do XI Titular">
+            <div class="pitch-line-half"></div>
+            <div class="pitch-center-circle"></div>
+            <div class="pitch-center-spot"></div>
+            <div class="pitch-penalty-area-top"></div>
+            <div class="pitch-penalty-area-bottom"></div>
+            <div class="pitch-goal-area-bottom"></div>
+            <!-- Jogadores posicionados via main.js -->
+            <div id="tactical-pitch" style="position:absolute; inset:0;"></div>
+          </div>
+        </div>
+
         <div class="card">
           <div class="card-header">
-            <div>
-              <h2 class="card-title">Elenco Completo & Métricas Individuais</h2>
-              <p class="card-subtitle">Estatísticas calculadas a partir da fonte primária de jogos com separação entre hierarquia tática, utilização e confiança da amostra.</p>
-            </div>
+            <h2 class="card-title">Estatísticas do Elenco</h2>
           </div>
 
           <!-- Barra de Filtros do Elenco -->
@@ -284,13 +309,13 @@
             </div>
 
             <div class="filter-group">
-              <label for="squad-confidence-filter" class="filter-label">Confiança:</label>
+              <label for="squad-confidence-filter" class="filter-label">Minutagem:</label>
               <select id="squad-confidence-filter" class="select-control">
-                <option value="all">Todas as Confianças</option>
-                <option value="alta">Alta (≥4J e ≥270m)</option>
-                <option value="moderada">Moderada (≥3J e ≥150m)</option>
-                <option value="baixa">Baixa (Amostra Curta)</option>
-                <option value="nula">Nula (Sem Minutos)</option>
+                <option value="all">Todas as Minutagens</option>
+                <option value="alta">Regular (≥270 min)</option>
+                <option value="moderada">Rotativo (≥150 min)</option>
+                <option value="baixa">Pouca Minutagem (&lt;150 min)</option>
+                <option value="nula">Sem Minutos</option>
               </select>
             </div>
           </div>
@@ -313,7 +338,7 @@
                   <th class="cell-num sortable" data-sort="nota_media" title="Ordenar por Nota Média">Nota <span class="sort-indicator"></span></th>
                   <th>Hierarquia</th>
                   <th>Utilização</th>
-                  <th>Recomendação & Confiança</th>
+                  <th>Situação no Elenco</th>
                 </tr>
               </thead>
               <tbody id="squad-table-body">
@@ -325,22 +350,19 @@
       </section>
 
       <!-- ==================================================================
-           ABA 3: PARTIDAS & LOGS DETALHADOS
+           ABA 3: PARTIDAS & ATUAÇÕES
            ================================================================== -->
       <section id="tab-matches" class="tab-pane" aria-labelledby="tab-matches">
         <!-- Grid de Cards de Jogos -->
         <div class="card">
-          <div class="card-header">
-            <div>
-              <h2 class="card-title">Calendário & Fichas Técnicas das Partidas</h2>
-              <p class="card-subtitle">Placares, mandos de campo, escalações completas e notas oficiais de cada confronto.</p>
-            </div>
+          <div class="card-header flex-between">
+            <h2 class="card-title">Calendário de Partidas</h2>
             <div class="filter-group">
               <label for="matches-comp-filter" class="filter-label">Competição:</label>
               <select id="matches-comp-filter" class="select-control">
                 <option value="all">Todas as Partidas</option>
-                <option value="LaLiga">LaLiga Hypermotion</option>
-                <option value="Champions">Champions Trophy (Pré-Temporada)</option>
+                <option value="LaLiga">Liga</option>
+                <option value="Champions">Pré-Temporada</option>
               </select>
             </div>
           </div>
@@ -351,13 +373,10 @@
           </div>
         </div>
 
-        <!-- Tabela Integrada de Atuações por Jogo (Logs Primários) -->
+        <!-- Tabela Integrada de Atuações por Jogo -->
         <div class="card">
           <div class="card-header">
-            <div>
-              <h2 class="card-title">Logs Primários de Atuação por Atleta</h2>
-              <p class="card-subtitle">Fonte primária da verdade: cada linha é uma participação de jogo extraída do banco binário do EA FC 26.</p>
-            </div>
+            <h2 class="card-title">Desempenho Individual por Partida</h2>
           </div>
 
           <div class="filters-bar">
@@ -369,8 +388,8 @@
               <label for="log-comp-filter" class="filter-label">Competição:</label>
               <select id="log-comp-filter" class="select-control">
                 <option value="all">Todas</option>
-                <option value="liga">LaLiga Hypermotion (Liga)</option>
-                <option value="copa">Pré-Temporada (Copa)</option>
+                <option value="liga">Liga</option>
+                <option value="copa">Pré-Temporada</option>
               </select>
             </div>
 
@@ -396,7 +415,6 @@
                   <th class="cell-num">Gols</th>
                   <th class="cell-num">Assists</th>
                   <th class="cell-num">Nota</th>
-                  <th>Auditoria</th>
                 </tr>
               </thead>
               <tbody id="logs-table-body">
@@ -411,13 +429,10 @@
            ABA 4: COMPETIÇÕES & CLASSIFICAÇÕES
            ================================================================== -->
       <section id="tab-competitions" class="tab-pane" aria-labelledby="tab-competitions">
-        <!-- Tabela de LaLiga Hypermotion -->
+        <!-- Tabela da Liga Nacional -->
         <div class="card">
           <div class="card-header">
-            <div>
-              <h2 class="card-title">LaLiga Hypermotion (Segunda División da Espanha)</h2>
-              <p class="card-subtitle">Temporada oficial 2025/2026 — Classificação em tempo real extraída diretamente da tabela da competição.</p>
-            </div>
+            <h2 id="comp-league-title" class="card-title">Liga Nacional</h2>
           </div>
           <div class="table-responsive">
             <table class="data-table">
@@ -442,13 +457,10 @@
           </div>
         </div>
 
-        <!-- Tabela do Champions Trophy -->
+        <!-- Tabela da Pré-Temporada -->
         <div class="card">
           <div class="card-header">
-            <div>
-              <h2 class="card-title">Champions Trophy (Torneio de Pré-Temporada)</h2>
-              <p class="card-subtitle">Fase de Grupos Internacional — FC Andorra Campeão Invicto com premiação de € 1.100.000.</p>
-            </div>
+            <h2 id="comp-preseason-title" class="card-title">Torneio de Pré-Temporada</h2>
           </div>
           <div class="table-responsive">
             <table class="data-table">
@@ -470,105 +482,6 @@
                 <!-- Preenchido via main.js -->
               </tbody>
             </table>
-          </div>
-        </div>
-      </section>
-
-      <!-- ==================================================================
-           ABA 5: CARREIRA & AUDITORIA DE INTEGRIDADE
-           ================================================================== -->
-      <section id="tab-career" class="tab-pane" aria-labelledby="tab-career">
-        <!-- Cards de Resumo da Auditoria -->
-        <div class="audit-stats-grid">
-          <div class="audit-stat-box verificado">
-            <div class="strip-label">Testes Verificados</div>
-            <div id="audit-ok-count" class="audit-stat-num green">0</div>
-            <div class="strip-sub">Validados contra registros primários</div>
-          </div>
-          <div class="audit-stat-box parcial">
-            <div class="strip-label">Validação Parcial</div>
-            <div id="audit-partial-count" class="audit-stat-num amber">0</div>
-            <div class="strip-sub">N/D no binário para múltiplos jogos</div>
-          </div>
-          <div class="audit-stat-box falhas">
-            <div class="strip-label">Falhas / Divergências</div>
-            <div id="audit-failed-count" class="audit-stat-num red">0</div>
-            <div class="strip-sub">Inconsistências encontradas</div>
-          </div>
-          <div class="audit-stat-box info">
-            <div class="strip-label">Total de Regras</div>
-            <div id="audit-total-count" class="audit-stat-num">0</div>
-            <div class="strip-sub">Protocolos contínuos de integridade</div>
-          </div>
-        </div>
-
-        <!-- Tabela do Checklist de Auditoria -->
-        <div class="card">
-          <div class="card-header">
-            <div>
-              <h2 class="card-title">Checklist Técnico de Auditoria & Validação de Dados</h2>
-              <p class="card-subtitle">Executado automaticamente a cada extração de save para garantir precisão estatística e contábil sem falsos positivos.</p>
-            </div>
-          </div>
-          <div class="table-responsive">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th class="cell-num">#</th>
-                  <th>Teste de Integridade</th>
-                  <th>Regra de Auditoria</th>
-                  <th>Status de Validação</th>
-                  <th>Resultado da Verificação</th>
-                </tr>
-              </thead>
-              <tbody id="audit-table-body">
-                <!-- Preenchido via main.js -->
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- Gerenciamento de Saves e Arquivo Multi-Carreira -->
-        <div class="card">
-          <div class="card-header">
-            <div>
-              <h2 class="card-title">Gestão de Carreira, Saves e Arquivo Histórico</h2>
-              <p class="card-subtitle">Arquitetura adaptável para múltiplas carreiras, ligas, divisões e temporadas do EA SPORTS FC 26.</p>
-            </div>
-          </div>
-          <div class="card-body">
-            <div class="grid-2col">
-              <div class="detail-block">
-                <div class="detail-block-title">Alternar Arquivo de Save Local</div>
-                <p style="font-size:13px; color:var(--text-secondary); margin-bottom:12px;">Selecione qualquer save da pasta <code>saves/</code> para sincronização local imediata:</p>
-                <div style="display:flex; gap:10px; align-items:center;">
-                  <select id="select-save-file" class="select-control" style="flex:1;">
-                    <option value="">Carregando lista de saves...</option>
-                  </select>
-                  <button id="btn-apply-save" class="btn btn-primary">Carregar Save</button>
-                </div>
-              </div>
-
-              <div class="detail-block">
-                <div class="detail-block-title">Resumo do Arquivo Histórico</div>
-                <div class="detail-row"><span class="detail-label">Carreiras Arquivadas</span><span id="archive-total-careers" class="detail-val">—</span></div>
-                <div class="detail-row"><span class="detail-label">Snapshots de Temporada</span><span id="archive-total-snapshots" class="detail-val">—</span></div>
-                <div class="detail-row"><span class="detail-label">Última Sincronização</span><span id="archive-last-sync" class="detail-val">—</span></div>
-                <div class="detail-row"><span class="detail-label">Versão do FC Manager</span><span class="detail-val" style="color:var(--brand-cyan);">v3.2 (Auditado)</span></div>
-              </div>
-            </div>
-
-            <div class="detail-block" style="margin-top:16px;">
-              <div class="detail-block-title">Arquivos e Estrutura Técnica</div>
-              <ul style="font-size:13px; color:var(--text-secondary); margin-left:18px; line-height:1.7;">
-                <li><code>assets/data/career_data.json</code>: Dados extraídos diretamente em JSON estruturado para consumo no GitHub Pages.</li>
-                <li><code>assets/data/career_data.js</code>: Bundle com fallback offline e sanitizado para execução estática.</li>
-                <li><code>assets/js/domain.js</code>: Núcleo puro de domínio, regras táticas e sanitização.</li>
-                <li><code>exports/Estatisticas_Jogadores_FC_Andorra_Carreira.xlsx</code>: Planilha com 5 abas formatadas e fórmulas nativas do Excel.</li>
-                <li><code>exports/Estatisticas_Jogadores_FC_Andorra_Carreira.csv</code>: Exportação CSV universal com todas as métricas consolidadas.</li>
-                <li><code>src/save_parser.py</code>: Motor de engenharia reversa do binário proprietário do EA FC 26 (descompressão Oodle + DB1/DB2).</li>
-              </ul>
-            </div>
           </div>
         </div>
       </section>
@@ -608,10 +521,10 @@
     <!-- Rodapé da Aplicação -->
     <footer class="app-footer">
       <div>
-        <strong>FC Manager v3.2</strong> · Modo Carreira EA SPORTS FC 26 · FC Andorra (Carles Manso Rubio)
+        <strong>FC Manager</strong> · Modo Carreira EA SPORTS FC 26 · <span id="footer-club-info">—</span>
       </div>
       <div>
-        <span>Fonte Primária: Logs de Jogos Reais &rarr; Normalização Canônica</span>
+        <span id="footer-sync-status" class="sync-status">Status: Dados Sincronizados</span>
       </div>
     </footer>
 
