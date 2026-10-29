@@ -6,7 +6,10 @@ import json
 import struct
 from datetime import datetime, timedelta
 from collections import defaultdict
-import xlsxwriter
+try:
+    import xlsxwriter
+except (ImportError, ModuleNotFoundError):
+    xlsxwriter = None
 
 SRC_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(SRC_DIR)
@@ -1707,6 +1710,8 @@ def export_spreadsheets(career_data, output_dir=EXPORTS_DIR):
                 p["recomendacao_sistema"], p["motivo_recomendacao"], p["detalhes"]
             ])
 
+    if not xlsxwriter:
+        return csv_path, None
     wb = xlsxwriter.Workbook(xlsx_path)
     fmt_title = wb.add_format({'bold': True, 'font_size': 13, 'font_color': '#FFFFFF', 'bg_color': '#182232', 'align': 'center', 'valign': 'vcenter', 'border': 1})
     fmt_subtitle = wb.add_format({'italic': True, 'font_size': 10, 'font_color': '#E2E8F0', 'bg_color': '#223046', 'align': 'center', 'valign': 'vcenter', 'border': 1})

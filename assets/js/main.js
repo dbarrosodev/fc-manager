@@ -25,6 +25,7 @@
   let rawData = null;
   let normalizedData = null;
   let isLocalServer = false;
+  let localApiBase = "";
   let activeTab = "overview";
   let squadViewMode = "performance"; // "performance" | "contracts"
   let matchesVenueFilter = "all"; // "all" | "home" | "away"
@@ -92,22 +93,25 @@
   async function loadCareerData() {
     setAppState(APP_STATE.LOADING);
 
-    // 1. Tentar API do servidor Python local
-    try {
-      const resp = await fetch("/api/data", { cache: "no-store" });
-      if (resp.ok) {
-        const json = await resp.json();
-        if (json && typeof json === "object") {
-          rawData = json;
-          isLocalServer = true;
-          updateSourceBadge("Servidor Local Ativo", "win");
-          processAndRender();
-          loadAvailableSaves();
-          return;
+    // 1. Tentar API do servidor Python local (mesma origem ou localhost:8080)
+    for (const base of ["", "http://127.0.0.1:8080"]) {
+      try {
+        const resp = await fetch(`${base}/api/data`, { cache: "no-store" });
+        if (resp.ok) {
+          const json = await resp.json();
+          if (json && typeof json === "object") {
+            rawData = json;
+            isLocalServer = true;
+            localApiBase = base;
+            updateSourceBadge("Servidor Local Ativo", "win");
+            processAndRender();
+            loadAvailableSaves();
+            return;
+          }
         }
+      } catch (e) {
+        // Ignora e tenta o próximo fallback
       }
-    } catch (e) {
-      // Ignora e tenta o próximo fallback
     }
 
     // 2. Tentar carregar assets/data/career_data.json (GitHub Pages)
@@ -1167,24 +1171,29 @@
   }
 
   async function loadAvailableSaves() {
-    if (!isLocalServer) return;
     try {
-      const resp = await fetch("/api/saves");
-      if (resp.ok) {
-        const body = await resp.json();
-        if (body.saves && Array.isArray(body.saves)) {
-          const names = body.saves.map(s => (typeof s === "string" ? s : s.filename || s.path));
-          normalizedData.available_saves = names;
-          const saveSelect = document.getElementById("select-save-file");
-          if (saveSelect) {
-            saveSelect.innerHTML = names.map(n => {
-              const isCurrent = n === normalizedData.save_file;
-              return `<option value="${Domain.escapeHtml(n)}" ${isCurrent ? 'selected' : ''}>${Domain.escapeHtml(n)}</option>`;
-            }).join("");
+      const endpoints = localApiBase ? [`${localApiBase}/api/saves`] : ["/api/saves", "http://127.0.0.1:8080/api/saves"];
+      for (const ep of endpoints) {
+        try {
+          const resp = await fetch(ep);
+          if (resp.ok) {
+            const body = await resp.json();
+            if (body.saves && Array.isArray(body.saves)) {
+              const names = body.saves.map(s => (typeof s === "string" ? s : s.filename || s.path));
+              normalizedData.available_saves = names;
+              const saveSelect = document.getElementById("select-save-file");
+              if (saveSelect) {
+                saveSelect.innerHTML = names.map(n => {
+                  const isCurrent = n === normalizedData.save_file;
+                  return `<option value="${Domain.escapeHtml(n)}" ${isCurrent ? 'selected' : ''}>${Domain.escapeHtml(n)}</option>`;
+                }).join("");
+              }
+              const saveWrap = document.getElementById("save-selector-wrap");
+              if (saveWrap && saveWrap.style) saveWrap.style.display = "flex";
+              return;
+            }
           }
-          const saveWrap = document.getElementById("save-selector-wrap");
-          if (saveWrap && saveWrap.style) saveWrap.style.display = "flex";
-        }
+        } catch (e) {}
       }
     } catch (e) {
       console.warn("Não foi possível carregar lista de saves remota:", e);
@@ -1653,25 +1662,23 @@
     const btnReload = document.getElementById("btn-reload-save");
     if (btnReload) {
       btnReload.addEventListener("click", async () => {
-        if (!isLocalServer) {
-          showToast("Ambiente estático (GitHub Pages): dados pré-compilados do repositório. Para sincronização ao vivo com o EA FC 26, execute localmente!", "warning");
-          return;
-        }
-
         setAppState(APP_STATE.LOADING);
-        try {
-          const resp = await fetch("/api/reload");
-          if (resp.ok) {
-            rawData = await resp.json();
-            processAndRender();
-            showToast("Dados do save sincronizados com sucesso!", "success");
-          } else {
-            throw new Error(`Falha no servidor (${resp.status})`);
-          }
-        } catch (e) {
-          showToast("Erro ao sincronizar save local: " + e.message, "error");
-          setAppState(APP_STATE.LOADED);
+        const endpoints = localApiBase ? [`${localApiBase}/api/reload`] : ["/api/reload", "http://127.0.0.1:8080/api/reload"];
+        for (const ep of endpoints) {
+          try {
+            const resp = await fetch(ep);
+            if (resp.ok) {
+              rawData = await resp.json();
+              isLocalServer = true;
+              localApiBase = ep.includes("8080") ? "http://127.0.0.1:8080" : "";
+              processAndRender();
+              showToast("Dados do save sincronizados com sucesso!", "success");
+              return;
+            }
+          } catch (e) {}
         }
+        showToast("Ambiente estático (GitHub Pages): dados pré-compilados do repositório. Para sincronização ao vivo com o EA FC 26, execute 'iniciar_tracker.bat'!", "warning");
+        setAppState(APP_STATE.LOADED);
       });
     }
 
@@ -1683,29 +1690,26 @@
         if (!select) return;
         const selected = select.value;
 
-        if (!isLocalServer) {
-          showToast(`No GitHub Pages o save ativo é fixo. Execute localmente para alternar para ${selected}.`, "warning");
-          return;
-        }
-
         setAppState(APP_STATE.LOADING);
-        try {
-          const resp = await fetch("/api/select_save", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ save_file: selected })
-          });
-          if (resp.ok) {
-            rawData = await resp.json();
-            processAndRender();
-            showToast(`Save alterado para ${selected}!`, "success");
-          } else {
-            throw new Error(`Falha ao selecionar save (${resp.status})`);
-          }
-        } catch (e) {
-          showToast("Erro ao carregar save: " + e.message, "error");
-          setAppState(APP_STATE.LOADED);
+        const endpoints = localApiBase ? [`${localApiBase}/api/select_save`] : ["/api/select_save", "http://127.0.0.1:8080/api/select_save"];
+        for (const ep of endpoints) {
+          try {
+            const resp = await fetch(ep, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ save_file: selected })
+            });
+            if (resp.ok) {
+              rawData = await resp.json();
+              isLocalServer = true;
+              processAndRender();
+              showToast(`Save alterado para ${selected}!`, "success");
+              return;
+            }
+          } catch (e) {}
         }
+        showToast(`No GitHub Pages o save ativo é fixo. Execute "iniciar_tracker.bat" para alternar para ${selected}.`, "warning");
+        setAppState(APP_STATE.LOADED);
       });
     }
   }
@@ -1749,16 +1753,80 @@
   // ==========================================================================
   // PROCESSAMENTO DE UPLOAD DE SAVE (CLIENT-SIDE & SERVIDOR LOCAL)
   // ==========================================================================
+  let pyodideInstance = null;
+  let pyodideLoadingPromise = null;
+
+  async function getPyodide() {
+    if (pyodideInstance) return pyodideInstance;
+    if (pyodideLoadingPromise) return pyodideLoadingPromise;
+
+    pyodideLoadingPromise = (async () => {
+      if (typeof loadPyodide !== "function") {
+        await new Promise((resolve, reject) => {
+          const s = document.createElement("script");
+          s.src = "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js";
+          s.onload = resolve;
+          s.onerror = () => reject(new Error("Falha ao carregar motor Pyodide"));
+          document.head.appendChild(s);
+        });
+      }
+
+      const py = await loadPyodide({
+        indexURL: "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/"
+      });
+
+      try {
+        py.FS.mkdirTree("/src");
+      } catch (e) {}
+
+      const [parserPy, schemaMeta, playernames] = await Promise.all([
+        fetch("src/save_parser.py").then(r => r.text()),
+        fetch("src/schema_meta.json").then(r => r.text()),
+        fetch("src/playernames.csv").then(r => r.text())
+      ]);
+
+      py.FS.writeFile("/src/save_parser.py", parserPy);
+      py.FS.writeFile("/src/schema_meta.json", schemaMeta);
+      py.FS.writeFile("/src/playernames.csv", playernames);
+
+      pyodideInstance = py;
+      return py;
+    })();
+
+    return pyodideLoadingPromise;
+  }
+
+  async function parseCmMgrInBrowser(file) {
+    showToast("Decodificando save CmMgr no navegador via WebAssembly...", "info");
+    const py = await getPyodide();
+    const arrayBuffer = await file.arrayBuffer();
+    py.FS.writeFile("/src/current_save", new Uint8Array(arrayBuffer));
+
+    const jsonStr = py.runPython(`
+import sys
+if "/src" not in sys.path:
+    sys.path.insert(0, "/src")
+import save_parser
+career_data = save_parser.parse_save_file("/src/current_save")
+career_data["save_file"] = "${file.name}"
+import json
+json.dumps(career_data)
+    `);
+
+    return JSON.parse(jsonStr);
+  }
+
   async function handleSaveFileUpload(file) {
     if (!file) return;
 
-    const fileNameLower = (file.name || "").toLowerCase();
+    const fileName = file.name || "";
+    const fileNameLower = fileName.toLowerCase();
     const isJsonOrJs = fileNameLower.endsWith(".json") || fileNameLower.endsWith(".js") || (file.type && (file.type.includes("json") || file.type.includes("javascript")));
 
     if (isJsonOrJs) {
-      // Processamento em tempo real no próprio navegador (funciona 100% no GitHub Pages e no servidor local)
+      // Processamento em tempo real de JSON/JS exportado
       try {
-        showToast(`Analisando arquivo "${file.name}"...`, "info");
+        showToast(`Analisando arquivo "${fileName}"...`, "info");
         const reader = new FileReader();
         reader.onload = (event) => {
           try {
@@ -1781,8 +1849,8 @@
 
             rawData = parsed;
             processAndRender();
-            setText("current-save-name", file.name);
-            showToast(`Save "${file.name}" analisado e carregado com sucesso!`, "success");
+            setText("current-save-name", fileName);
+            showToast(`Save "${fileName}" analisado e carregado com sucesso!`, "success");
           } catch (parseErr) {
             console.error("Erro ao analisar arquivo:", parseErr);
             showToast("Estrutura do arquivo inválida. Forneça um save JSON válido.", "error");
@@ -1794,36 +1862,58 @@
         showToast("Erro ao abrir arquivo de save.", "error");
       }
     } else {
-      // Arquivo binário de save do EA FC 26
-      if (isLocalServer) {
+      // Arquivo binário de save do EA FC 26 (CmMgr...)
+      showToast(`Processando save CmMgr "${fileName}"...`, "info");
+
+      // 1. Tentar decodificar via servidor local Python (/api/upload ou localhost:8080)
+      let parsedData = null;
+      const endpoints = localApiBase ? [`${localApiBase}/api/upload`] : ["/api/upload", "http://127.0.0.1:8080/api/upload"];
+      for (const ep of endpoints) {
         try {
-          showToast(`Enviando save binário "${file.name}" ao servidor para decodificação...`, "info");
-          const resp = await fetch("/api/upload", {
+          const resp = await fetch(ep, {
             method: "POST",
             headers: {
-              "X-Filename": file.name,
+              "X-Filename": fileName,
               "Content-Type": "application/octet-stream"
             },
             body: file
           });
           if (resp.ok) {
-            const json = await resp.json();
-            rawData = json;
-            processAndRender();
-            loadAvailableSaves();
-            setText("current-save-name", file.name);
-            showToast(`Save binário "${file.name}" processado com sucesso pelo parser!`, "success");
-          } else {
-            const err = await resp.json().catch(() => ({}));
-            showToast(err.error || "Falha ao processar arquivo binário de save no servidor.", "error");
+            parsedData = await resp.json();
+            isLocalServer = true;
+            localApiBase = ep.includes("8080") ? "http://127.0.0.1:8080" : "";
+            break;
           }
-        } catch (err) {
-          console.error("Erro ao enviar save:", err);
-          showToast("Erro de comunicação ao enviar arquivo de save.", "error");
+        } catch (e) {
+          // Tenta o próximo endpoint
         }
-      } else {
-        showToast("No ambiente web estático, envie o arquivo career_data.json exportado ou execute 'python -m src.app' para ler saves binários do FC 26.", "warning");
       }
+
+      if (parsedData && typeof parsedData === "object" && !parsedData.error) {
+        rawData = parsedData;
+        processAndRender();
+        loadAvailableSaves();
+        setText("current-save-name", fileName);
+        showToast(`Save CmMgr "${fileName}" lido e analisado com sucesso!`, "success");
+        return;
+      }
+
+      // 2. Se o servidor local não responder, decodificar no navegador via WebAssembly (Pyodide)
+      try {
+        const wasmData = await parseCmMgrInBrowser(file);
+        if (wasmData && typeof wasmData === "object") {
+          rawData = wasmData;
+          processAndRender();
+          setText("current-save-name", fileName);
+          showToast(`Save CmMgr "${fileName}" decodificado com sucesso no navegador!`, "success");
+          return;
+        }
+      } catch (wasmErr) {
+        console.warn("Tentativa de decodificação WebAssembly não concluída:", wasmErr);
+      }
+
+      // 3. Fallback informativo
+      showToast(`Não foi possível decodificar o save "${fileName}". Inicie o servidor executando "iniciar_tracker.bat" na pasta do FC Manager.`, "error");
     }
   }
 
