@@ -181,7 +181,7 @@
     setText("club-name", club.nome || "FC Andorra");
     setText("coach-name", club.treinador || "Carles Manso Rubio");
     setText("club-league", club.liga || "LaLiga Hypermotion");
-    setText("save-date", club.data_atual || "Data não informada");
+    setText("save-date", club.data_atual || "Indisponível");
     setText("career-season", club.temporada || "Temporada 1");
     setText("current-save-name", normalizedData.save_file || "CmMgrSave");
 

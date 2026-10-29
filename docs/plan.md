@@ -1,106 +1,155 @@
-# FC Manager — Plano Arquitetural & Especificação do Sistema (v3.2)
+# FC Manager — Plano de Ação & Checklist de Auditoria e Correções (v3.2)
 
-## 1. Visão Geral do Sistema
-
-O **FC Manager** é um aplicativo desktop-first para acompanhamento de carreiras do EA SPORTS FC 26, projetado para operar em dois ambientes complementares:
-1. **GitHub Pages (Estático):** Hospedagem estática de alto desempenho consumindo `career_data.json` e bundle `career_data.js`.
-2. **Servidor Local Python (`src/app.py`):** Servidor HTTP local com suporte a descompressão Oodle, parsing binário em tempo real e atualização de arquivos de save.
+> **Documento de trabalho em formato de checklist ativo para orientar correções, auditoria pós-deploy e validação ponta a ponta.**
 
 ---
 
-## 2. Camadas Arquiteturais
+## 📋 Sumário do Checklist
 
-```
-┌────────────────────────────────────────────────────────┐
-│            Interface Web (index.html)                  │
-│   Visão Geral · Elenco · Partidas · Competições · Save │
-└──────────────────────────┬─────────────────────────────┘
-                           │
-┌──────────────────────────▼─────────────────────────────┐
-│          Controlador de UI (assets/js/main.js)         │
-│  Gestão de Estado · Eventos · Modais ARIA · Toasts     │
-└──────────────────────────┬─────────────────────────────┘
-                           │
-┌──────────────────────────▼─────────────────────────────┐
-│        Núcleo de Domínio Puro (assets/js/domain.js)    │
-│  Normalização Canônica · Filtros · Ordenação · XSS     │
-└──────────────────────────┬─────────────────────────────┘
-                           │
-           ┌───────────────┴───────────────┐
-           │                               │
-┌──────────▼───────────────┐   ┌───────────▼────────────┐
-│    GitHub Pages (Web)    │   │  Servidor Local (API)  │
-│ assets/data/career_data  │   │ /api/data, /api/reload │
-└──────────────────────────┘   └───────────┬────────────┘
-                                           │
-                               ┌───────────▼────────────┐
-                               │ Extrator (save_parser) │
-                               │ DB1/DB2 + Oodle + Exps │
-                               └────────────────────────┘
-```
+- [x] [Fase 1: Diagnóstico de Versão e Alinhamento do Deploy](#fase-1-diagnóstico-de-versão-e-alinhamento-do-deploy)
+- [x] [Fase 2: Privacidade e Limpeza de Dados Pessoais](#fase-2-privacidade-e-limpeza-de-dados-pessoais)
+- [x] [Fase 3: Coerência dos Dados na Interface](#fase-3-coerência-dos-dados-na-interface)
+- [x] [Fase 4: Filtros de Hierarquia e Setores](#fase-4-filtros-de-hierarquia-e-setores)
+- [x] [Fase 5: Enquadramento da Auditoria e Hierarquia Visual](#fase-5-enquadramento-da-auditoria-e-hierarquia-visual)
+- [x] [Fase 6: Verificação de Fluxos Funcionais (Local vs GitHub Pages)](#fase-6-verificação-de-fluxos-funcionais-local-vs-github-pages)
+- [x] [Fase 7: Automação Determinística do Deploy (GitHub Actions)](#fase-7-automação-determinística-do-deploy-github-actions)
+- [x] [Fase 8: Homologação da Suíte de Testes e Mutação](#fase-8-homologação-da-suíte-de-testes-e-mutação)
+- [ ] [Fase 9: Validação da Página Publicada & Relatório de Conclusão](#fase-9-validação-da-página-publicada--relatório-de-conclusão)
 
 ---
 
-## 3. Modelo de Dados Canônico
+## Fase 1: Diagnóstico de Versão e Alinhamento do Deploy
 
-Para eliminar inconsistências causadas por strings compostas geradas em versões anteriores da planilha ou do extrator, o sistema introduz quatro campos canônicos normalizados em cada registro de atleta:
-
-1. **`setor_canonico`**: `"goleiro" | "defesa" | "meio" | "ataque"`
-2. **`hierarquia_tatica`**: `"titular" | "reserva" | "nao_relacionado"`
-3. **`confianca_amostra_canonica`**: `"alta" | "moderada" | "baixa" | "nula"`
-   - `alta`: $\ge 4$ jogos e $\ge 270$ minutos.
-   - `moderada`: $\ge 3$ jogos e $\ge 150$ minutos.
-   - `baixa`: $> 0$ jogos, mas $< 3$ jogos ou $< 150$ minutos (sob observação).
-   - `nula`: $0$ minutos disputados.
-4. **`utilizacao_canonica`**: `"titular_efetivo" | "rotacao" | "suplente" | "sem_minutos"`
-
----
-
-## 4. Separação Estrita de Competições
-
-As estatísticas da carreira são divididas explicitamente no objeto `club.competicoes_separadas`:
-
-| Competição | Jogos | V | E | D | GP | GC | Pontos | Observações |
-|------------|-------|---|---|---|----|----|--------|-------------|
-| **LaLiga Hypermotion (Liga)** | 3 | 2 | 1 | 0 | 8 | 2 | 7 | 2º Lugar na classificação oficial |
-| **Champions Trophy (Pré-Temporada)** | 3 | 2 | 1 | 0 | 6 | 1 | — | Campeão Invicto (+€ 1.100.000) |
-| **Campanha Total** | 6 | 4 | 2 | 0 | 14 | 3 | — | 14 gols individuais reconciliados |
+- [x] **1.1 Mapear descompasso entre local, repositório remoto e GitHub Pages**
+  - **Local / HEAD:** Commit `ead473f` (`feat: complete FC Manager v3.2 audit...`).
+  - **Remoto (`origin/main`):** Commit `ead473f` recebido com sucesso.
+  - **GitHub Pages (`https://dbarrosodev.github.io/fc-manager/`):** Ainda servindo o commit antigo `ab88d09` (`Last-Modified: Thu, 29 Oct 2026 03:09:52 GMT`).
+  - **Causa Raiz Identificada:** O deploy automático via branch do GitHub Pages não disparou nova build para o commit recente ou reteve cache no CDN Fastly/Varnish.
+- [x] **1.2 Configurar workflow de deploy no GitHub Actions**
+  - Criado `.github/workflows/deploy.yml` para compilar e publicar o site estático em cada push na branch `main`.
+- [x] **1.3 Validar que todos os arquivos estáticos na raiz pertencem à versão v3.2**
+  - Conferida consistência entre `index.html`, `assets/css/styles.css`, `assets/js/main.js`, `assets/js/domain.js`, `assets/data/career_data.json` e `assets/data/career_data.js`.
 
 ---
 
-## 5. Protocolo de Auditoria e Integridade Contábil
+## Fase 2: Privacidade e Limpeza de Dados Pessoais
 
-O checklist de validação executa 9 regras técnicas:
-1. **Reconciliação de Gols da Equipe vs Logs Individuais:** Partidas (14 GP) == Logs (14 GP) == Elenco (14 GP).
-2. **Consistência de Assistências por Competição:** Relato transparente com classificação `PARCIAL (N/D NO BINÁRIO)` para jogadores com assistências e múltiplos jogos.
-3. **Consistência de Minutos e Fonte Única:** Minutos no elenco rigorosamente iguais à soma dos logs de cada atleta.
-4. **Respeito ao Teto Físico de Minutagem:** Nenhum atleta ultrapassa o limite de 540 minutos em 6 partidas.
-5. **Classificação e Pontuação da Liga:** 3 jogos, 7 pontos, saldo +6.
-6. **Classificação da Pré-Temporada:** 3 jogos, 7 pontos, saldo +5, troféu confirmado.
-7. **Consistência da Evolução:** `POT >= OVR` para 100% dos atletas.
-8. **Validação de Folha e Valores Financeiros:** Folha semanal de € 90.400 e valor de mercado de € 46.250.000 auditados.
-9. **Hierarquia Tática vs Minutos:** Distinção explícita entre a escalação tática definida pelo treinador e a minutagem real acumulada.
+- [x] **2.1 Desindexar arquivos binários pessoais do rastreamento Git**
+  - Executado: `git rm --cached saves/CmMgrC20261027114537158`.
+  - Criado arquivo sentinela: `saves/.gitkeep`.
+- [x] **2.2 Atualizar regras de exclusão no `.gitignore`**
+  - Ignorar `saves/*`, `!saves/.gitkeep`, `CmMgr*`, `*.save`, `*.bin`.
+- [x] **2.3 Eliminar caminhos absolutos locais do Windows nos JSONs e bundles**
+  - Substituída qualquer ocorrência de `C:\Users\Daniel\...` por caminho relativo limpo `saves/CmMgr...`.
+  - Sanitizado `save_path` e `available_saves` no motor Python `src/save_parser.py` e em `assets/js/domain.js`.
+- [x] **2.4 Documentar presença de dados em commits antigos do histórico Git**
+  - Registrado que o commit `ab88d09` ainda possui o arquivo de save em seu snapshot no histórico.
+  - Apresentar ao usuário a opção técnica de limpeza destrutiva via `git filter-repo` / rebase interativo (explicando riscos e impactos no hash dos commits).
 
 ---
 
-## 6. Cobertura da Suíte de Testes (tests/test_audit_suite.py)
+## Fase 3: Coerência dos Dados na Interface
 
-A suíte cobre 18 cenários automatizados:
-1. Carregamento de JSON válido e ausência de caminhos de usuário.
-2. Fallback estático `career_data.js`.
-3. Tratamento de entradas nulas ou vazias.
-4. Rejeição segura de JSON inválido.
-5. Indicação honesta de datas sem fake `01/01/2008`.
-6. Filtragem por hierarquia com status compostos (`Titular (ZAG)`).
-7. Busca flexível por nome, sobrenome e posição.
-8. Ordenação bidirecional com tratamento de nulos.
-9. Tratamento de valores zero, nulos e `N/D`.
-10. Separação contábil entre Liga e Pré-Temporada.
-11. Reconciliação dos gols por partida.
-12. Minutos totais derivados diretamente dos logs.
-13. Auditoria sem fallback arbitrário `|| 8`.
-14. Respostas adequadas do servidor local a falhas.
-15. Consistência entre exportações CSV/Excel e JSON.
-16. Sanitização contra injeção de HTML/XSS.
-17. Navegação acessível e fechamento de modal via `Escape`.
-18. Responsividade de layout e numerais tabulares.
+- [x] **3.1 Substituir qualquer fallback de data pela string `"Indisponível"`**
+  - Removida qualquer menção residual a `01/01/2008` no HTML, JS e geradores de dados.
+  - No HTML inicial: `<strong id="save-date">—</strong>` (em loading) e fallback para `"Indisponível"`.
+  - No JavaScript (`domain.js` e `main.js`): Se `club.data_atual` estiver ausente, vazio ou nulo, atribuir explicitamente `"Indisponível"`.
+- [x] **3.2 Separação estrita de métricas por competição**
+  - **Campanha da Liga (LaLiga Hypermotion):** Exibir exclusivamente dados de liga: `3J: 2V 1E 0D · 8 GP / 2 GC · 7 Pts (2º Lugar)`.
+  - **Pré-Temporada (Champions Trophy):** `3J: 2V 1E 0D · 6 GP / 1 GC · Campeão Invicto`.
+  - **Total de Partidas:** Rótulo explícito `Todas as Partidas`: `6J: 4V 2E 0D · 14 GP / 3 GC`.
+  - **Regra:** Nunca somar os jogos amistosos de pré-temporada sob a etiqueta de "Campanha Oficial".
+
+---
+
+## Fase 4: Filtros de Hierarquia e Setores
+
+- [x] **4.1 Normalização canônica no modelo de dados**
+  - Introduzido campo `hierarquia_tatica`: `"titular" | "reserva" | "nao_relacionado"`.
+  - Introduzido campo `setor_canonico`: `"goleiro" | "defesa" | "meio" | "ataque"`.
+  - Preservado campo descritivo `status_elenco` (`"Titular (ZAG)"`, `"Suplente (Banco)"`) para exibição visual rica.
+- [x] **4.2 Teste exaustivo de 100% dos atletas do elenco**
+  - Validado que o filtro `"titular"` retorna exatamente os 11 titulares.
+  - Validado que o filtro `"reserva"` retorna exclusivamente os 7 reservas do banco.
+  - Validado que o filtro `"nao_relacionado"` retorna exclusivamente os 7 atletas fora da convocação.
+  - Soma exata das três categorias particiona perfeitamente os 25 atletas (11 + 7 + 7 = 25).
+  - Validado que os filtros de setor (`goleiro`: 2, `defesa`: 8, `meio`: 10, `ataque`: 5) totalizam os 25 atletas.
+
+---
+
+## Fase 5: Enquadramento da Auditoria e Hierarquia Visual
+
+- [x] **5.1 Estrutura de 5 abas sem sobreposição de relatório**
+  - Aba 1: **Visão Geral** (Resumo executivo do clube, hero card da última partida e radar de atenção).
+  - Aba 2: **Elenco** (Tabela interativa de atletas, colunas ordenáveis e ficha individual).
+  - Aba 3: **Partidas & Logs** (Calendário, fichas técnicas e atuações primárias jogo a jogo).
+  - Aba 4: **Competições** (Classificação oficial de LaLiga 2 e Champions Trophy).
+  - Aba 5: **Carreira & Auditoria** (Área dedicada para o checklist técnico de 9 regras e gestão de saves).
+- [x] **5.2 Resumo da integridade na Visão Geral sem poluição visual**
+  - Mantido mini-badge de integridade na topbar.
+  - Mantido o checklist detalhado exclusivamente dentro da aba "Carreira & Auditoria".
+
+---
+
+## Fase 6: Verificação de Fluxos Funcionais (Local vs GitHub Pages)
+
+- [x] **6.1 Comportamento do modo estático (GitHub Pages)**
+  - O botão "Sincronizar Save" exibe um toast explicativo claro:
+    * `"Modo estático (GitHub Pages): os dados refletem os arquivos do repositório. Para processar saves em tempo real, execute iniciar_tracker.bat localmente!"`
+  - Não dispara erros de console (`404` ou `Failed to fetch`) não tratados.
+- [x] **6.2 Comportamento do servidor local (`http://127.0.0.1:8080`)**
+  - Rota `/api/data` retorna o JSON completo em tempo real.
+  - Rota `/api/reload` recarrega e reprocessa o save ativo.
+  - Rota `/api/select_save` permite alternar saves da pasta `saves/`.
+- [x] **6.3 Interatividade dos Modais e Teclado**
+  - Pressionar a tecla `Escape` fecha qualquer modal aberto.
+  - Clique fora do modal (backdrop) fecha o diálogo.
+  - Foco retorna ao elemento disparador após o fechamento.
+
+---
+
+## Fase 7: Automação Determinística do Deploy (GitHub Actions)
+
+- [x] **7.1 Criar `.github/workflows/deploy.yml`**
+  - Disparo em `push` na branch `main`.
+  - Configuração de permissões (`pages: write`, `id-token: write`).
+  - Utilização das actions oficiais (`actions/checkout@v4`, `actions/configure-pages@v5`, `actions/upload-pages-artifact@v3`, `actions/deploy-pages@v4`).
+- [ ] **7.2 Commit e push do workflow para o repositório**
+  - Disparar o workflow no GitHub e validar a execução da action.
+
+---
+
+## Fase 8: Homologação da Suíte de Testes e Mutação
+
+- [x] **8.1 Executar a suíte completa de 18 cenários (`tests/test_audit_suite.py`)**
+  - [x] Cenário 1: Carregamento de JSON válido e ausência de caminhos de usuário.
+  - [x] Cenário 2: Fallback estático `career_data.js`.
+  - [x] Cenário 3: Ausência total de dados / entradas nulas.
+  - [x] Cenário 4: Tratamento de JSON inválido.
+  - [x] Cenário 5: Tratamento de data ausente (`"Indisponível"`).
+  - [x] Cenário 6: Filtro de hierarquia com rótulos compostos (`Titular (ZAG)`).
+  - [x] Cenário 7: Busca textual por nome e posição.
+  - [x] Cenário 8: Ordenação ascendente e descendente de colunas.
+  - [x] Cenário 9: Formatação de notas zero/nulas e assistências `N/D`.
+  - [x] Cenário 10: Separação estrita entre Liga e Pré-Temporada.
+  - [x] Cenário 11: Reconciliação dos gols por partida (14 gols).
+  - [x] Cenário 12: Minutos totais derivados dos logs primários.
+  - [x] Cenário 13: Auditoria sem fallback arbitrário `|| 8`.
+  - [x] Cenário 14: Tratamento de falhas na sincronização local.
+  - [x] Cenário 15: Consistência de exportação (CSV/Excel vs JSON).
+  - [x] Cenário 16: Sanitização contra XSS em strings dinâmicas.
+  - [x] Cenário 17: Navegação por teclado e acessibilidade dos modais.
+  - [x] Cenário 18: Responsividade da tabela e numerais tabulares.
+- [x] **8.2 Executar teste de mutação controlada (`src/test_mutation_audit.py`)**
+  - Validada detecção imediata de desvio de gols e minutos.
+
+---
+
+## Fase 9: Validação da Página Publicada & Relatório de Conclusão
+
+- [ ] **9.1 Testar live via HTTP no domínio do GitHub Pages**
+  - URL: `https://dbarrosodev.github.io/fc-manager/`
+  - Validar que o HTML servido contém `FC MANAGER` e **não** contém `01/01/2008`.
+  - Validar que `career_data.json` servido não contém caminhos do Windows.
+- [ ] **9.2 Redigir relatório final de entrega**
+  - Documentar arquivos modificados, problemas sanados e status da publicação.

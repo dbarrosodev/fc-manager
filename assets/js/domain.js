@@ -160,7 +160,7 @@
     const c = Object.assign({}, data.club || {});
     c.nome = String(c.nome || "Clube Indefinido").trim();
     c.treinador = String(c.treinador || "Treinador").trim();
-    c.data_atual = (c.data_atual && String(c.data_atual).trim() !== "") ? String(c.data_atual).trim() : "Data não informada";
+    c.data_atual = (c.data_atual && String(c.data_atual).trim() !== "") ? String(c.data_atual).trim() : "Indisponível";
     c.temporada = String(c.temporada || "Temporada 1").trim();
     c.liga = String(c.liga || "Liga").trim();
     c.pais = String(c.pais || "Espanha").trim();
@@ -351,9 +351,7 @@
       if (hierarchy !== "all") {
         if (hierarchy === "titular") {
           if (player.hierarquia_tatica !== "titular") return false;
-        } else if (hierarchy === "reserva") {
-          if (player.hierarquia_tatica !== "reserva" && player.hierarquia_tatica !== "nao_relacionado") return false;
-        } else if (hierarchy === "banco") {
+        } else if (hierarchy === "reserva" || hierarchy === "banco") {
           if (player.hierarquia_tatica !== "reserva") return false;
         } else if (hierarchy === "nao_relacionado") {
           if (player.hierarquia_tatica !== "nao_relacionado") return false;

@@ -127,7 +127,7 @@ class TestFCManagerAuditSuite(unittest.TestCase):
               console.error('Data fake 01/01/2008 detectada!');
               process.exit(1);
             }
-            if (norm.club.data_atual !== 'Data não informada') {
+            if (norm.club.data_atual !== 'Indisponível') {
               console.error('Data não tratada corretamente:', norm.club.data_atual);
               process.exit(1);
             }
@@ -145,7 +145,7 @@ class TestFCManagerAuditSuite(unittest.TestCase):
     # CENÁRIO 6: Filtro de hierarquia com rótulos compostos (ex: Titular (ZAG))
     # -------------------------------------------------------------------------
     def test_06_hierarchy_filter_with_status_labels(self):
-        """Garante que 'Titular (ZAG)' e 'Suplente (Banco)' são corretamente filtrados via canônico."""
+        """Garante que 'Titular (ZAG)' e 'Suplente (Banco)' são corretamente filtrados via canônico para 100% dos atletas."""
         cmd = [
             "node", "-e",
             """
@@ -155,11 +155,30 @@ class TestFCManagerAuditSuite(unittest.TestCase):
             const titulares = d.filterSquad(norm.squad, { hierarchy: 'titular' });
             const reservas = d.filterSquad(norm.squad, { hierarchy: 'reserva' });
             const naoRel = d.filterSquad(norm.squad, { hierarchy: 'nao_relacionado' });
-            if (titulares.length === 0 || reservas.length === 0) {
-              console.error('Filtro de hierarquia falhou! Titulares:', titulares.length, 'Reservas:', reservas.length);
+            
+            // Validar que 100% dos atletas pertencem a uma hierarquia canônica válida
+            for (const p of norm.squad) {
+              if (!['titular', 'reserva', 'nao_relacionado'].includes(p.hierarquia_tatica)) {
+                console.error('Atleta com hierarquia inválida:', p.nome, p.hierarquia_tatica);
+                process.exit(1);
+              }
+              if (!['goleiro', 'defesa', 'meio', 'ataque'].includes(p.setor_canonico)) {
+                console.error('Atleta com setor inválido:', p.nome, p.setor_canonico);
+                process.exit(1);
+              }
+              // Garantir que rótulo detalhado original está preservado
+              if (!p.status_elenco || p.status_elenco.trim() === '') {
+                console.error('Status elenco detalhado vazio:', p.nome);
+                process.exit(1);
+              }
+            }
+
+            if (titulares.length + reservas.length + naoRel.length !== norm.squad.length) {
+              console.error('Soma das hierarquias diverge do total de atletas');
               process.exit(1);
             }
-            console.log(JSON.stringify({ tit: titulares.length, res: reservas.length, nao: naoRel.length }));
+
+            console.log(JSON.stringify({ tit: titulares.length, res: reservas.length, nao: naoRel.length, total: norm.squad.length }));
             """
         ]
         res = subprocess.run(cmd, cwd=PROJECT_ROOT, capture_output=True, text=True)
@@ -167,6 +186,7 @@ class TestFCManagerAuditSuite(unittest.TestCase):
         counts = json.loads(res.stdout.strip())
         self.assertEqual(counts["tit"], 11, "Deveriam haver exatamente 11 titulares na escalação principal")
         self.assertGreater(counts["res"], 0)
+        self.assertEqual(counts["total"], counts["tit"] + counts["res"] + counts["nao"])
 
     # -------------------------------------------------------------------------
     # CENÁRIO 7: Busca por nome e posição
