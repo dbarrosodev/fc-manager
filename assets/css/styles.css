@@ -1459,7 +1459,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   color: #34d399;
 }
 
-/* Responsividade geral */
+/* Responsividade geral & sticky columns */
 @media (max-width: 768px) {
   .app-container {
     padding: 12px 14px 40px 14px;
@@ -1475,5 +1475,41 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .topbar-actions {
     width: 100%;
     justify-content: flex-start;
+  }
+
+  /* Coluna fixa do jogador ao rolar horizontalmente em mobile */
+  #squad-table thead th:nth-child(1),
+  #squad-table tbody td:nth-child(1) {
+    position: sticky;
+    left: 0;
+    z-index: 3;
+    background-color: var(--bg-surface);
+    min-width: 44px;
+  }
+  #squad-table thead th:nth-child(1) {
+    z-index: 5;
+    background-color: #151d27;
+  }
+
+  #squad-table thead th:nth-child(2),
+  #squad-table tbody td:nth-child(2) {
+    position: sticky;
+    left: 44px;
+    z-index: 3;
+    background-color: var(--bg-surface);
+    box-shadow: 3px 0 8px rgba(0, 0, 0, 0.45);
+  }
+  #squad-table thead th:nth-child(2) {
+    z-index: 5;
+    background-color: #151d27;
+  }
+
+  #squad-table tbody tr:nth-child(even) td:nth-child(1),
+  #squad-table tbody tr:nth-child(even) td:nth-child(2) {
+    background-color: #16202c;
+  }
+  #squad-table tbody tr:hover td:nth-child(1),
+  #squad-table tbody tr:hover td:nth-child(2) {
+    background-color: var(--bg-surface-hover);
   }
 }

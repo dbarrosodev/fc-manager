@@ -161,12 +161,144 @@
   function renderAll() {
     if (!normalizedData) return;
     renderClubHeader();
+    populateCompetitionFilters();
+    setupDynamicExports();
     renderOverviewTab();
     renderSquadTab();
     renderTacticalPitch();
     renderMatchesTab();
     renderCompetitionsTab();
     validateDataIntegritySilently();
+  }
+
+  // ==========================================================================
+  // FILTROS DINÂMICOS DE COMPETIÇÃO
+  // ==========================================================================
+  function populateCompetitionFilters() {
+    const matches = normalizedData.matches || [];
+    const logs = normalizedData.player_match_logs || [];
+
+    // Coletar nomes únicos de competições do payload do save
+    const compSet = new Set();
+    matches.forEach(m => {
+      if (m.competicao && typeof m.competicao === "string") {
+        compSet.add(m.competicao.trim());
+      }
+    });
+    logs.forEach(l => {
+      if (l.competicao && typeof l.competicao === "string") {
+        compSet.add(l.competicao.trim());
+      }
+    });
+
+    const uniqueComps = Array.from(compSet).sort();
+
+    // 1. Dropdown de Partidas
+    const matchesSelect = document.getElementById("matches-comp-filter");
+    if (matchesSelect) {
+      const currentVal = matchesCompFilter || "all";
+      matchesSelect.innerHTML = `<option value="all">Todas as Competições</option>` +
+        uniqueComps.map(c => `<option value="${Domain.escapeHtml(c)}" ${c === currentVal ? "selected" : ""}>${Domain.escapeHtml(c)}</option>`).join("");
+    }
+
+    // 2. Dropdown de Logs de Atuação
+    const logsSelect = document.getElementById("log-comp-filter");
+    if (logsSelect) {
+      const currentVal = logFilters.competition || "all";
+      logsSelect.innerHTML = `<option value="all">Todas as Competições</option>` +
+        uniqueComps.map(c => `<option value="${Domain.escapeHtml(c)}" ${c === currentVal ? "selected" : ""}>${Domain.escapeHtml(c)}</option>`).join("");
+    }
+  }
+
+  // ==========================================================================
+  // EXPORTAÇÃO DINÂMICA DE DADOS (CSV / XLSX)
+  // ==========================================================================
+  function setupDynamicExports() {
+    const club = normalizedData.club || {};
+    const clubSlug = (club.nome || "Clube").replace(/[^a-zA-Z0-9_-]/g, "_");
+
+    // Configurar botão Excel (.xlsx) com metadados do clube
+    const btnXlsx = document.getElementById("btn-export-xlsx");
+    if (btnXlsx) {
+      btnXlsx.download = `Estatisticas_${clubSlug}_Carreira.xlsx`;
+      btnXlsx.title = `Exportar Planilha Excel (${club.nome || "Carreira"})`;
+      // Link dinâmico para a exportação correspondente
+      btnXlsx.href = "exports/Estatisticas_Jogadores_FC_Andorra_Carreira.xlsx";
+    }
+
+    // Configurar botão CSV para geração client-side dinâmica via Blob
+    const btnCsv = document.getElementById("btn-export-csv");
+    if (btnCsv && !btnCsv._hasDynamicExportListener) {
+      btnCsv._hasDynamicExportListener = true;
+      btnCsv.addEventListener("click", e => {
+        e.preventDefault();
+        exportSquadToCsvClientSide();
+      });
+    }
+  }
+
+  function exportSquadToCsvClientSide() {
+    if (!normalizedData || !normalizedData.squad) return;
+    const club = normalizedData.club || {};
+    const clubSlug = (club.nome || "Clube").replace(/[^a-zA-Z0-9_-]/g, "_");
+    const fileName = `Estatisticas_${clubSlug}_Carreira.csv`;
+
+    const headers = [
+      "ID", "Nº", "Jogador", "Posição", "Setor", "Idade", "Nacionalidade",
+      "Overall", "Potencial", "Evolução", "Jogos", "Titular", "Reserva",
+      "Minutos", "Gols", "Assistências", "Nota Média", "Valor de Mercado",
+      "Salário Semanal", "Hierarquia", "Utilização", "Situação Tática"
+    ];
+
+    const rows = normalizedData.squad.map(p => [
+      p.playerid || "",
+      p.numero || "",
+      `"${String(p.nome || "").replace(/"/g, '""')}"`,
+      p.posicao_principal || "",
+      p.setor_canonico || "",
+      p.idade || "",
+      `"${String(p.nacionalidade || "").replace(/"/g, '""')}"`,
+      p.overall || "",
+      p.potencial || "",
+      p.evolucao_real || 0,
+      p.jogos || 0,
+      p.jogos_titular || 0,
+      p.jogos_reserva || 0,
+      p.minutos || 0,
+      p.gols || 0,
+      p.assistencias || 0,
+      Domain.formatRating(p.nota_media),
+      p.valor_mercado || 0,
+      p.salario || 0,
+      `"${String(p.status_elenco || "").replace(/"/g, '""')}"`,
+      `"${String(p.status_utilizacao || "").replace(/"/g, '""')}"`,
+      `"${String(p.recomendacao_sistema || "").replace(/"/g, '""')}"`
+    ]);
+
+    const csvContent = "\uFEFF" + [headers.join(";"), ...rows.map(r => r.join(";"))].join("\r\n");
+
+    try {
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      if (window.navigator && window.navigator.msSaveOrOpenBlob) {
+        window.navigator.msSaveOrOpenBlob(blob, fileName);
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      const tempLink = document.createElement("a");
+      tempLink.href = url;
+      tempLink.download = fileName;
+      tempLink.style.display = "none";
+      document.body.appendChild(tempLink);
+      tempLink.click();
+      setTimeout(() => {
+        document.body.removeChild(tempLink);
+        URL.revokeObjectURL(url);
+      }, 200);
+      showToast(`Exportação concluída: ${fileName}`, "success");
+    } catch (err) {
+      console.error("Erro ao gerar CSV dinâmico:", err);
+      showToast("Não foi possível gerar a exportação CSV.", "error");
+    }
   }
 
   // ==========================================================================
@@ -243,11 +375,22 @@
       }
     }
 
-    // 2. Card de Premiação & Objetivos
-    setText("card-preseason-title", pre.nome_torneio || pre.titulo || "Champions Trophy");
-    setText("card-preseason-status", pre.titulo ? `★ ${pre.titulo}` : "★ Campeão Invicto");
-    setText("card-preseason-prize", pre.premiacao ? `+${Domain.formatCurrency(pre.premiacao)}` : "+€ 1.100.000");
-    setText("card-league-standing", liga.posicao ? `${liga.posicao}º Lugar (Zona de Acesso)` : "2º Lugar (Zona de Acesso)");
+    // 2. Card de Premiação & Objetivos (Dinâmico a partir do save)
+    const preTitle = pre.nome || pre.nome_torneio || pre.titulo || "Torneio de Pré-Temporada";
+    const preStatus = pre.titulo ? (pre.titulo.includes("Campeão") ? "★ Campeão Invicto" : `★ ${pre.titulo}`) : (pre.jogos ? `${pre.jogos} jogos disputados` : "—");
+    let prePrize = "—";
+    if (pre.premiacao) {
+      prePrize = `+${Domain.formatCurrency(pre.premiacao)}`;
+    } else if (pre.titulo) {
+      const matchPrize = String(pre.titulo).match(/€\s*[\d\.,]+/);
+      if (matchPrize) prePrize = `+${matchPrize[0]}`;
+    }
+    const leagueStanding = liga.posicao ? `${liga.posicao}º Lugar (Zona de Acesso)` : (liga.pontos ? `${liga.pontos} Pontos` : "—");
+
+    setText("card-preseason-title", preTitle);
+    setText("card-preseason-status", preStatus);
+    setText("card-preseason-prize", prePrize);
+    setText("card-league-standing", leagueStanding);
 
     // 3. Radar de Atenção do Elenco
     // a) Top Artilheiros
@@ -507,7 +650,11 @@
 
     let filtered = matches;
     if (matchesCompFilter !== "all") {
-      filtered = matches.filter(m => (m.competicao || "").toLowerCase().includes(matchesCompFilter.toLowerCase()));
+      filtered = matches.filter(m => {
+        const c = (m.competicao || "").toLowerCase().trim();
+        const f = matchesCompFilter.toLowerCase().trim();
+        return c.includes(f) || f.includes(c);
+      });
     }
 
     if (filtered.length === 0) {
@@ -600,11 +747,15 @@
   function renderCompetitionsTab() {
     const club = normalizedData.club || {};
     const comps = club.competicoes_separadas || {};
+    const liga = comps.liga || {};
     const pre = comps.pre_temporada || {};
     const standings = normalizedData.standings || {};
 
-    setText("comp-league-title", `${club.liga || "Liga Nacional"} (Classificação Oficial)`);
-    setText("comp-preseason-title", `${pre.nome_torneio || pre.titulo || "Torneio de Pré-Temporada"} (Fase Final)`);
+    const leagueTitle = club.liga || liga.nome || "Liga Nacional";
+    const preTitle = pre.nome || pre.nome_torneio || pre.titulo || "Torneio de Pré-Temporada";
+
+    setText("comp-league-title", `${leagueTitle} (Classificação Oficial)`);
+    setText("comp-preseason-title", `${preTitle} (Fase Final)`);
 
     renderStandingsTable("laliga2-table-body", standings.laliga2 || []);
     renderStandingsTable("preseason-table-body", standings.preseason || []);
@@ -624,7 +775,7 @@
 
     tbody.innerHTML = tableRows.map(row => {
       const rowName = (row.nome_time || row.time || "").toLowerCase();
-      const isOurClub = clubKey && rowName.includes(clubKey);
+      const isOurClub = Boolean(clubKey && rowName.includes(clubKey));
       const rowStyle = isOurClub ? "background-color: var(--brand-cyan-muted); font-weight:700;" : "";
 
       return `
@@ -1106,7 +1257,8 @@
     closeModal,
     showToast,
     getAppState: () => currentState,
-    getNormalizedData: () => normalizedData
+    getNormalizedData: () => normalizedData,
+    exportSquadToCsvClientSide
   };
 
 })(window, document);

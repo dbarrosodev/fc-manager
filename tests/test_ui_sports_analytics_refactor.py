@@ -203,7 +203,7 @@ class TestUISportsAnalyticsRefactor(unittest.TestCase):
             })();
             """
         ]
-        res = subprocess.run(cmd, cwd=PROJECT_ROOT, capture_output=True, text=True)
+        res = subprocess.run(cmd, cwd=PROJECT_ROOT, capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(res.returncode, 0, f"Falha na simulação da prancheta tática: {res.stderr}")
 
         info = json.loads(res.stdout)
@@ -281,11 +281,127 @@ class TestUISportsAnalyticsRefactor(unittest.TestCase):
             })();
             """
         ]
-        res = subprocess.run(cmd, cwd=PROJECT_ROOT, capture_output=True, text=True)
+        res = subprocess.run(cmd, cwd=PROJECT_ROOT, capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(res.returncode, 0, f"Falha na validação silenciosa: {res.stderr}")
         data = json.loads(res.stdout)
         self.assertEqual(data["badgeText"], "Status: Dados Sincronizados")
         self.assertEqual(data["footerText"], "Status: Dados Sincronizados")
+
+    # -------------------------------------------------------------------------
+    # CENÁRIO 44: Zero Options Hardcoded de Competição no HTML
+    # -------------------------------------------------------------------------
+    def test_44_no_hardcoded_competition_options_in_html(self):
+        """Verifica que o HTML não possui opções fixas de LaLiga ou Champions nos selects."""
+        forbidden_options = [
+            '<option value="laliga"',
+            '<option value="champions"',
+            '<option value="liga"',
+            '<option value="copa"'
+        ]
+        for opt in forbidden_options:
+            self.assertNotIn(opt, self.index_html.lower(), f"Option hardcoded '{opt}' encontrado no HTML")
+
+    # -------------------------------------------------------------------------
+    # CENÁRIO 45: Filtros de Competição Populados Dinamicamente
+    # -------------------------------------------------------------------------
+    def test_45_dynamic_competition_filters_populated(self):
+        """Executa simulação e confere se os dropdowns de competição foram hidratados via JS."""
+        self.assertIn("populateCompetitionFilters", self.main_js)
+
+        cmd = [
+            "node", "-e",
+            """
+            const fs = require('fs');
+            const vm = require('vm');
+            const data = JSON.parse(fs.readFileSync('assets/data/career_data.json', 'utf-8'));
+
+            function makeElement(id) {
+              return {
+                id,
+                textContent: '',
+                innerHTML: '',
+                children: [],
+                style: {},
+                classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
+                appendChild(c) { this.children.push(c); return c; },
+                addEventListener() {},
+                querySelector() { return makeElement(null); },
+                querySelectorAll() { return []; }
+              };
+            }
+
+            const elements = new Map();
+            const listeners = {};
+            const doc = {
+              getElementById: id => {
+                if (!elements.has(id)) elements.set(id, makeElement(id));
+                return elements.get(id);
+              },
+              createElement: tag => makeElement(tag),
+              querySelectorAll: () => [],
+              addEventListener: (e, fn) => { (listeners[e] = listeners[e] || []).push(fn); }
+            };
+
+            const sandbox = {
+              console,
+              document: doc,
+              window: {},
+              FALLBACK_CAREER_DATA: data,
+              setTimeout,
+              clearTimeout,
+              fetch: () => Promise.reject(new Error('offline'))
+            };
+            sandbox.window = sandbox;
+            sandbox.self = sandbox;
+            vm.createContext(sandbox);
+
+            vm.runInContext(fs.readFileSync('assets/js/domain.js', 'utf-8'), sandbox);
+            vm.runInContext(fs.readFileSync('assets/js/main.js', 'utf-8'), sandbox);
+
+            (async () => {
+              for (const fn of listeners.DOMContentLoaded || []) await fn();
+              await new Promise(r => setTimeout(r, 40));
+
+              const matchFilter = doc.getElementById('matches-comp-filter');
+              const logFilter = doc.getElementById('log-comp-filter');
+
+              process.stdout.write(JSON.stringify({
+                matchOptions: matchFilter.innerHTML,
+                logOptions: logFilter.innerHTML
+              }));
+            })();
+            """
+        ]
+        res = subprocess.run(cmd, cwd=PROJECT_ROOT, capture_output=True, text=True, encoding="utf-8")
+        self.assertEqual(res.returncode, 0, f"Falha ao validar filtros dinâmicos: {res.stderr}")
+        out = json.loads(res.stdout)
+        self.assertIn("Todas as Competições", out["matchOptions"])
+        self.assertIn("LaLiga Hypermotion", out["matchOptions"])
+        self.assertIn("Todas as Competições", out["logOptions"])
+        self.assertIn("LaLiga Hypermotion", out["logOptions"])
+
+    # -------------------------------------------------------------------------
+    # CENÁRIO 46: Exportação Dinâmica (Client-side Blob CSV e Excel)
+    # -------------------------------------------------------------------------
+    def test_46_dynamic_csv_and_xlsx_export(self):
+        """Verifica que o botão CSV expõe gerador via Blob e que Excel tem metadados dinâmicos."""
+        self.assertIn("exportSquadToCsvClientSide", self.main_js)
+        self.assertIn("setupDynamicExports", self.main_js)
+        # O HTML não deve ter arquivo hardcoded em href
+        self.assertNotIn('href="exports/Estatisticas_Jogadores_FC_Andorra_Carreira.xlsx"', self.index_html)
+        self.assertNotIn('href="exports/Estatisticas_Jogadores_FC_Andorra_Carreira.csv"', self.index_html)
+
+    # -------------------------------------------------------------------------
+    # CENÁRIO 47: Coluna Fixa do Atleta (Sticky) em Telas Menores
+    # -------------------------------------------------------------------------
+    def test_47_mobile_sticky_player_column_css(self):
+        """Verifica a presença de position: sticky na coluna do jogador no CSS responsivo."""
+        with open(self.css_path, "r", encoding="utf-8") as f:
+            css = f.read()
+
+        self.assertIn("position: sticky", css)
+        self.assertIn("#squad-table", css)
+        self.assertIn("@media (max-width: 768px)", css)
 
 
 if __name__ == "__main__":

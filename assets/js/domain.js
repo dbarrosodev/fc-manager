@@ -559,7 +559,11 @@
         const tipoComp = String(log.tipo_competicao || "").toLowerCase();
         const compName = String(log.competicao || "").toLowerCase();
         if (comp === "liga" && !tipoComp.includes("liga") && !compName.includes("liga")) return false;
-        if ((comp === "copa" || comp === "pretemporada") && (tipoComp.includes("liga") || compName.includes("liga"))) return false;
+        else if ((comp === "copa" || comp === "pretemporada") && (tipoComp.includes("liga") || compName.includes("liga"))) return false;
+        else if (comp !== "liga" && comp !== "copa" && comp !== "pretemporada") {
+          const matchExactOrPartial = compName.includes(comp) || comp.includes(compName) || tipoComp.includes(comp);
+          if (!matchExactOrPartial) return false;
+        }
       }
 
       if (matchId !== "all") {
