@@ -359,7 +359,7 @@
     const liga = comps.liga || {};
     const pre = comps.pre_temporada || {};
     const tot = comps.total_temporada || {};
-    const squad = normalizedData.squad || [];
+    const squad = (normalizedData && normalizedData.squad) || [];
 
     setText("club-crest", getInitials(club.nome));
     if (club.logoUrl) {
@@ -431,7 +431,7 @@
     const comps = club.competicoes_separadas || {};
     const liga = comps.liga || {};
     const pre = comps.pre_temporada || {};
-    const squad = normalizedData.squad || [];
+    const squad = (normalizedData && normalizedData.squad) || [];
 
     // 1. Card de Última Partida — sempre o registro completo resolvido pelo domínio
     const lastMatch = club.ultima_partida || null;
@@ -565,7 +565,7 @@
     const pitch = document.getElementById("tactical-pitch");
     if (!pitch) return;
 
-    const squad = normalizedData.squad || [];
+    const squad = (normalizedData && normalizedData.squad) || [];
     let starters = squad.filter(p => p.hierarquia_tatica === "titular");
 
     // Fallback: se não houver 11 titulares marcados, seleciona os 11 com mais minutos
@@ -611,6 +611,13 @@
 
     const autoFormationStr = `${defenders.length}-${midfielders.length}-${attackers.length}`;
     const activeFormation = selectedPitchFormation === "auto" ? autoFormationStr : selectedPitchFormation;
+
+    if (formationSelect) {
+      const autoOption = formationSelect.querySelector('option[value="auto"]');
+      if (autoOption) {
+        autoOption.textContent = `Auto (${autoFormationStr})`;
+      }
+    }
 
     setText("tactical-formation", activeFormation);
     setText("xi-formation", activeFormation);
@@ -696,7 +703,7 @@
   // ABA 2: ELENCO (SQUAD HUB)
   // ==========================================================================
   function renderSquadTab() {
-    const squad = normalizedData.squad || [];
+    const squad = (normalizedData && normalizedData.squad) || [];
     const tbody = document.getElementById("squad-table-body");
     const thead = document.getElementById("squad-table-head");
     if (!tbody) return;
@@ -780,6 +787,7 @@
         const margin = p.margem_potencial !== undefined ? p.margem_potencial : ((p.potencial || 0) - (p.overall || 0));
         const isExpiring = p.anos_contrato !== undefined && p.anos_contrato <= 1;
         const contractBadge = isExpiring ? `<span class="badge-contract-alert">Último Ano</span>` : "";
+        const isCompared = comparedPlayerIds.includes(p.playerid);
 
         return `
           <tr tabindex="0" role="button" aria-label="Ver ficha de ${Domain.escapeHtml(p.nome)}" onclick="window.TrackerApp.openPlayerModal(${p.playerid})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); window.TrackerApp.openPlayerModal(${p.playerid});}">
@@ -790,6 +798,7 @@
                   <span class="player-display-name">${Domain.escapeHtml(p.nome)}</span>
                   <div class="player-meta-inline">${Domain.escapeHtml(p.nacionalidade || "")}</div>
                 </div>
+                <button type="button" class="btn-compare-player ${isCompared ? 'active' : ''}" data-playerid="${p.playerid}" title="${isCompared ? 'Remover da comparação' : 'Comparar jogador (Head-to-Head)'}" aria-label="Comparar ${Domain.escapeHtml(p.nome)}" onclick="event.stopPropagation(); window.TrackerApp.toggleComparePlayer(${p.playerid});">⇄</button>
               </div>
             </td>
             <td class="col-pos"><span class="badge badge-pos ${posSector}">${Domain.escapeHtml(p.posicao_principal)}</span></td>
@@ -809,6 +818,7 @@
         const evolBadge = p.evolucao_real > 0 ? `<span class="badge-evol">+${p.evolucao_real}</span>` : "";
         const secPosBadge = p.posicoes_secundarias && p.posicoes_secundarias !== "—" && p.posicoes_secundarias !== "-"
           ? `<span class="badge-sec-pos">${Domain.escapeHtml(p.posicoes_secundarias)}</span>` : "";
+        const isCompared = comparedPlayerIds.includes(p.playerid);
 
         let statusClass = "reserve";
         let statusLabel = "Reserva";
@@ -836,6 +846,7 @@
                   ${secPosBadge}
                   <div class="player-meta-inline">${Domain.escapeHtml(p.nacionalidade || "")}</div>
                 </div>
+                <button type="button" class="btn-compare-player ${isCompared ? 'active' : ''}" data-playerid="${p.playerid}" title="${isCompared ? 'Remover da comparação' : 'Comparar jogador (Head-to-Head)'}" aria-label="Comparar ${Domain.escapeHtml(p.nome)}" onclick="event.stopPropagation(); window.TrackerApp.toggleComparePlayer(${p.playerid});">⇄</button>
               </div>
             </td>
             <td class="col-pos"><span class="badge badge-pos ${posSector}">${Domain.escapeHtml(p.posicao_principal)}</span></td>
@@ -1244,8 +1255,14 @@
     const per90Assists = Domain.formatNumber(calculatedAssists90);
     const per90GA = Domain.formatNumber(player.ga_por_90 || 0);
     const pctMin = player.pct_minutos || 0;
+    const isCompared = comparedPlayerIds.includes(player.playerid);
 
     body.innerHTML = `
+      <div style="display:flex; justify-content:flex-end; margin-bottom: 0.85rem;">
+        <button type="button" class="btn-compare-action ${isCompared ? 'active' : ''}" data-playerid="${player.playerid}" onclick="window.TrackerApp.toggleComparePlayer(${player.playerid});">
+          ⇄ ${isCompared ? 'Remover da Comparação' : 'Comparar Atleta (Head-to-Head)'}
+        </button>
+      </div>
       <div class="metrics-per90-grid">
         <div class="metric-per90-box">
           <div class="metric-per90-val">${per90Gols}</div>
@@ -1446,6 +1463,230 @@
       lastFocusedElement.focus();
       lastFocusedElement = null;
     }
+  }
+
+  // ==========================================================================
+  // COMPARADOR DE ATLETAS (HEAD-TO-HEAD)
+  // ==========================================================================
+  let comparedPlayerIds = [];
+
+  function toggleComparePlayer(playerId) {
+    playerId = Number(playerId);
+    const squad = (normalizedData && normalizedData.squad) || [];
+    const player = squad.find(p => p.playerid === playerId);
+    if (!player) return;
+
+    const idx = comparedPlayerIds.indexOf(playerId);
+    if (idx >= 0) {
+      comparedPlayerIds.splice(idx, 1);
+      showToast(`${player.nome} removido da comparação.`, "info");
+    } else {
+      if (comparedPlayerIds.length >= 2) {
+        comparedPlayerIds = [comparedPlayerIds[1], playerId];
+      } else {
+        comparedPlayerIds.push(playerId);
+      }
+      showToast(`${player.nome} selecionado para comparação (${comparedPlayerIds.length}/2).`, "info");
+    }
+
+    updateCompareUI();
+
+    if (comparedPlayerIds.length === 2) {
+      openCompareModal(comparedPlayerIds[0], comparedPlayerIds[1]);
+    }
+  }
+
+  function clearCompare() {
+    comparedPlayerIds = [];
+    updateCompareUI();
+    const modal = document.getElementById("modal-compare");
+    if (modal && modal.classList.contains("open")) {
+      closeModal(modal);
+    }
+    showToast("Seleção de comparação limpa.", "info");
+  }
+
+  function updateCompareUI() {
+    const squad = (normalizedData && normalizedData.squad) || [];
+
+    // Atualizar botões nas linhas da tabela
+    document.querySelectorAll(".btn-compare-player").forEach(btn => {
+      const pid = Number(btn.getAttribute("data-playerid"));
+      if (comparedPlayerIds.includes(pid)) {
+        btn.classList.add("active");
+        btn.setAttribute("title", "Remover da comparação");
+      } else {
+        btn.classList.remove("active");
+        btn.setAttribute("title", "Comparar jogador (Head-to-Head)");
+      }
+    });
+
+    // Atualizar botões no modal de atleta
+    document.querySelectorAll(".btn-compare-action").forEach(btn => {
+      const pid = Number(btn.getAttribute("data-playerid"));
+      if (comparedPlayerIds.includes(pid)) {
+        btn.classList.add("active");
+        btn.textContent = "Remover da Comparação";
+      } else {
+        btn.classList.remove("active");
+        btn.textContent = "Comparar Atleta (Head-to-Head)";
+      }
+    });
+
+    // Atualizar bandeja flutuante
+    const tray = document.getElementById("compare-floating-tray");
+    const trayText = document.getElementById("compare-tray-text");
+    if (tray && trayText) {
+      if (comparedPlayerIds.length === 0) {
+        tray.style.display = "none";
+      } else if (comparedPlayerIds.length === 1) {
+        tray.style.display = "flex";
+        const p1 = squad.find(p => p.playerid === comparedPlayerIds[0]);
+        const name1 = p1 ? Domain.escapeHtml(p1.nome) : "Atleta";
+        trayText.innerHTML = `1/2 Selecionado: <strong>${name1}</strong> (Selecione o 2º atleta na tabela)`;
+      } else if (comparedPlayerIds.length === 2) {
+        tray.style.display = "flex";
+        const p1 = squad.find(p => p.playerid === comparedPlayerIds[0]);
+        const p2 = squad.find(p => p.playerid === comparedPlayerIds[1]);
+        const name1 = p1 ? Domain.escapeHtml(p1.nome) : "Atleta 1";
+        const name2 = p2 ? Domain.escapeHtml(p2.nome) : "Atleta 2";
+        trayText.innerHTML = `Comparando: <strong>${name1}</strong> vs <strong>${name2}</strong>`;
+      }
+    }
+  }
+
+  function openCompareModal(p1Id, p2Id) {
+    if (!p1Id && !p2Id) {
+      if (comparedPlayerIds.length < 2) {
+        showToast("Selecione 2 jogadores para abrir o comparativo Head-to-Head.", "info");
+        return;
+      }
+      p1Id = comparedPlayerIds[0];
+      p2Id = comparedPlayerIds[1];
+    } else if (p1Id && !p2Id) {
+      if (comparedPlayerIds.length === 2) {
+        p2Id = comparedPlayerIds.find(id => id !== p1Id);
+      } else {
+        showToast("Selecione outro atleta para comparar.", "info");
+        return;
+      }
+    }
+
+    const squad = (normalizedData && normalizedData.squad) || [];
+    const p1 = squad.find(p => p.playerid === Number(p1Id));
+    const p2 = squad.find(p => p.playerid === Number(p2Id));
+    if (!p1 || !p2) return;
+
+    lastFocusedElement = document.activeElement;
+
+    const modal = document.getElementById("modal-compare");
+    const body = document.getElementById("modal-compare-body");
+    if (!modal || !body) return;
+
+    function renderAttrBox(label, v1, v2, disp1, disp2, highlightHigher = true) {
+      const num1 = Number(v1) || 0;
+      const num2 = Number(v2) || 0;
+      const win1 = highlightHigher && num1 > num2;
+      const win2 = highlightHigher && num2 > num1;
+      return `
+        <div class="compare-attr-box">
+          <div class="compare-attr-title">${label}</div>
+          <div class="compare-attr-values">
+            <span class="compare-val ${win1 ? 'winner' : ''}">${disp1}</span>
+            <span class="compare-val-divider">vs</span>
+            <span class="compare-val ${win2 ? 'winner' : ''}">${disp2}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderBarRow(label, v1, v2, disp1, disp2) {
+      const num1 = Number(v1) || 0;
+      const num2 = Number(v2) || 0;
+      const maxVal = Math.max(num1, num2, 0.0001);
+      const pct1 = Math.min(100, Math.round((num1 / maxVal) * 100));
+      const pct2 = Math.min(100, Math.round((num2 / maxVal) * 100));
+      const win1 = num1 > num2;
+      const win2 = num2 > num1;
+
+      return `
+        <div class="compare-bar-row">
+          <div class="compare-bar-meta">
+            <span class="compare-bar-val ${win1 ? 'winner' : ''}">${disp1}</span>
+            <span class="compare-bar-title">${label}</span>
+            <span class="compare-bar-val ${win2 ? 'winner' : ''}">${disp2}</span>
+          </div>
+          <div class="compare-bar-track-wrap">
+            <div class="compare-track-left">
+              <div class="compare-bar-fill ${win1 ? 'winner' : ''}" style="width: ${pct1}%;"></div>
+            </div>
+            <div class="compare-track-divider"></div>
+            <div class="compare-track-right">
+              <div class="compare-bar-fill ${win2 ? 'winner' : ''}" style="width: ${pct2}%;"></div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    const ga90_1 = p1.ga_por_90 !== undefined ? p1.ga_por_90 : (p1.minutos > 0 ? (((p1.gols || 0) + (p1.assistencias || 0)) * 90 / p1.minutos) : 0);
+    const ga90_2 = p2.ga_por_90 !== undefined ? p2.ga_por_90 : (p2.minutos > 0 ? (((p2.gols || 0) + (p2.assistencias || 0)) * 90 / p2.minutos) : 0);
+
+    body.innerHTML = `
+      <div class="compare-header">
+        <div class="compare-card-player left">
+          <div class="compare-player-avatar">${p1.numero || p1.overall}</div>
+          <div>
+            <div class="compare-player-name">${Domain.escapeHtml(p1.nome)}</div>
+            <div class="compare-player-meta">
+              <span class="badge badge-pos ${p1.setor_canonico || 'meio'}">${Domain.escapeHtml(p1.posicao_principal)}</span>
+              <span>${Domain.escapeHtml(p1.nacionalidade || "")}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="compare-vs-pill">VS</div>
+
+        <div class="compare-card-player right">
+          <div class="compare-player-avatar">${p2.numero || p2.overall}</div>
+          <div>
+            <div class="compare-player-name">${Domain.escapeHtml(p2.nome)}</div>
+            <div class="compare-player-meta">
+              <span class="badge badge-pos ${p2.setor_canonico || 'meio'}">${Domain.escapeHtml(p2.posicao_principal)}</span>
+              <span>${Domain.escapeHtml(p2.nacionalidade || "")}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Grid de Atributos Básicos -->
+      <div class="compare-attr-grid">
+        ${renderAttrBox("Overall (OVR)", p1.overall, p2.overall, p1.overall, p2.overall)}
+        ${renderAttrBox("Potencial (POT)", p1.potencial, p2.potencial, p1.potencial, p2.potencial)}
+        ${renderAttrBox("Idade", p1.idade, p2.idade, `${p1.idade}a`, `${p2.idade}a`, false)}
+        ${renderAttrBox("Valor Mercado", p1.valor_mercado, p2.valor_mercado, Domain.formatCurrency(p1.valor_mercado || 0), Domain.formatCurrency(p2.valor_mercado || 0))}
+        ${renderAttrBox("Salário Semanal", p1.salario, p2.salario, `${Domain.formatCurrency(p1.salario || 0)}/sem`, `${Domain.formatCurrency(p2.salario || 0)}/sem`)}
+      </div>
+
+      <!-- Barras Horizontais Comparativas -->
+      <div class="compare-bars-section">
+        <div class="detail-block-title" style="margin-bottom: 0.5rem;">Desempenho Comparativo em Campo</div>
+        ${renderBarRow("Minutos Jogados", p1.minutos, p2.minutos, `${p1.minutos || 0}'`, `${p2.minutos || 0}'`)}
+        ${renderBarRow("Gols", p1.gols, p2.gols, p1.gols || 0, p2.gols || 0)}
+        ${renderBarRow("Assistências", p1.assistencias, p2.assistencias, p1.assistencias || 0, p2.assistencias || 0)}
+        ${renderBarRow("G+A por 90'", ga90_1, ga90_2, Domain.formatNumber(ga90_1), Domain.formatNumber(ga90_2))}
+        ${renderBarRow("Nota Média", p1.nota_media, p2.nota_media, Domain.formatRating(p1.nota_media), Domain.formatRating(p2.nota_media))}
+      </div>
+
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top: 1.5rem;">
+        <button type="button" class="btn btn-sm btn-ghost" onclick="window.TrackerApp.clearCompare();">Limpar Comparação</button>
+        <button type="button" class="btn btn-sm btn-primary" onclick="window.TrackerApp.closeModal();">Fechar</button>
+      </div>
+    `;
+
+    modal.classList.add("open");
+    const closeBtn = modal.querySelector(".modal-close");
+    if (closeBtn) closeBtn.focus();
   }
 
   // ==========================================================================
@@ -1940,7 +2181,11 @@ json.dumps(career_data)
     setMatchesResultFilter: filter => {
       matchesResultFilter = filter;
       renderMatchesGrid();
-    }
+    },
+    toggleComparePlayer,
+    openCompareModal,
+    clearCompare,
+    getComparedPlayerIds: () => comparedPlayerIds
   };
 
 })(window, document);

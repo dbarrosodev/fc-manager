@@ -1095,6 +1095,142 @@ class TestUISportsAnalyticsRefactor(unittest.TestCase):
         self.assertIn("TAB_TO_HASH", js)
         self.assertIn("switchTab", js)
 
+    # -------------------------------------------------------------------------
+    # CENÁRIO 62: Header XI Tático, Legenda de Zonas e Comparador Head-to-Head
+    # -------------------------------------------------------------------------
+    def test_62_tactical_header_legend_and_head_to_head_compare(self):
+        """Verifica correção de tags no XI Tático, legenda de classificação e comparador H2H."""
+        with open(self.css_path, "r", encoding="utf-8") as f:
+            css = f.read()
+        with open(self.main_js_path, "r", encoding="utf-8") as f:
+            js = f.read()
+
+        # 1. Sem tags duplicadas <strong><strong> no HTML
+        self.assertNotIn("<strong><strong>", self.index_html, "Não deve haver tags strong aninhadas no HTML")
+        self.assertIn('id="tactical-formation"', self.index_html)
+        self.assertIn('id="xi-formation"', self.index_html)
+        self.assertIn('id="select-pitch-formation"', self.index_html)
+
+        # 2. Legenda visual nas tabelas de classificação
+        self.assertIn("table-legend", self.index_html, "Legenda visual da classificação ausente no index.html")
+        self.assertIn("Acesso Direto", self.index_html)
+        self.assertIn("Playoffs de Acesso", self.index_html)
+        self.assertIn("Zona de Rebaixamento", self.index_html)
+        self.assertIn(".table-legend", css)
+        self.assertIn(".legend-dot", css)
+
+        # 3. Toggle Mín. 150 min e Comparador H2H
+        self.assertIn('id="squad-min-minutes-toggle"', self.index_html)
+        self.assertIn("Mín. 150 min", self.index_html)
+        self.assertIn('id="modal-compare"', self.index_html)
+        self.assertIn('id="compare-floating-tray"', self.index_html)
+        self.assertIn(".btn-compare-player", css)
+        self.assertIn(".compare-bar-fill", css)
+        self.assertIn(".winner", css)
+        self.assertIn("toggleComparePlayer", js)
+        self.assertIn("openCompareModal", js)
+        self.assertIn("clearCompare", js)
+
+        # 4. Execução DOM via Node.js do Comparador Head-to-Head
+        cmd = [
+            "node", "-e",
+            """
+            const fs = require('fs');
+            const vm = require('vm');
+            const data = JSON.parse(fs.readFileSync('assets/data/career_data.json', 'utf8'));
+
+            const elements = {};
+            const listeners = {};
+            function makeElement(id) {
+              return {
+                id,
+                innerHTML: '',
+                textContent: '',
+                value: '',
+                style: {},
+                classList: {
+                  classes: new Set(),
+                  add: c => elements[id].classList.classes.add(c),
+                  remove: c => elements[id].classList.classes.delete(c),
+                  contains: c => elements[id].classList.classes.has(c)
+                },
+                querySelector: q => null,
+                querySelectorAll: q => [],
+                addEventListener: () => {},
+                setAttribute: () => {},
+                getAttribute: () => null,
+                appendChild: () => {},
+                removeChild: () => {},
+                remove: () => {},
+                focus: () => {}
+              };
+            }
+
+            const doc = {
+              getElementById: id => elements[id] || (elements[id] = makeElement(id)),
+              querySelectorAll: () => [],
+              querySelector: () => null,
+              createElement: tag => makeElement(tag),
+              addEventListener: (e, fn) => { (listeners[e] = listeners[e] || []).push(fn); },
+              body: { appendChild: () => {} },
+              activeElement: null
+            };
+
+            const sandbox = {
+              console,
+              document: doc,
+              window: {},
+              FALLBACK_CAREER_DATA: data,
+              setTimeout,
+              clearTimeout,
+              fetch: () => Promise.reject(new Error('offline'))
+            };
+            sandbox.window = sandbox;
+            sandbox.self = sandbox;
+            vm.createContext(sandbox);
+
+            vm.runInContext(fs.readFileSync('assets/js/domain.js', 'utf-8'), sandbox);
+            vm.runInContext(fs.readFileSync('assets/js/main.js', 'utf-8'), sandbox);
+
+            (async () => {
+              for (const fn of listeners.DOMContentLoaded || []) await fn();
+              await new Promise(r => setTimeout(r, 40));
+
+              const squad = data.squad || [];
+              const p1 = squad[0];
+              const p2 = squad[1];
+
+              sandbox.window.TrackerApp.toggleComparePlayer(p1.playerid);
+              sandbox.window.TrackerApp.toggleComparePlayer(p2.playerid);
+
+              const compareBody = doc.getElementById('modal-compare-body');
+              const compareModal = doc.getElementById('modal-compare');
+
+              const result = {
+                modalIsOpen: compareModal.classList.contains('open'),
+                hasPlayer1: compareBody.innerHTML.includes(p1.nome),
+                hasPlayer2: compareBody.innerHTML.includes(p2.nome),
+                hasCompareBars: compareBody.innerHTML.includes('compare-bar-track-wrap'),
+                hasWinnerHighlight: compareBody.innerHTML.includes('winner'),
+                hasMinutos: compareBody.innerHTML.includes('Minutos Jogados'),
+                hasGA90: compareBody.innerHTML.includes('G+A por 90')
+              };
+
+              process.stdout.write(JSON.stringify(result));
+            })();
+            """
+        ]
+        res = subprocess.run(cmd, cwd=PROJECT_ROOT, capture_output=True, text=True, encoding="utf-8")
+        self.assertEqual(res.returncode, 0, f"Node script falhou: {res.stderr}")
+        out = json.loads(res.stdout)
+        self.assertTrue(out["modalIsOpen"], "Modal de comparação deve abrir ao selecionar 2 jogadores")
+        self.assertTrue(out["hasPlayer1"], "Nome do jogador 1 deve constar no comparador")
+        self.assertTrue(out["hasPlayer2"], "Nome do jogador 2 deve constar no comparador")
+        self.assertTrue(out["hasCompareBars"], "Barras horizontais comparativas devem estar renderizadas")
+        self.assertTrue(out["hasWinnerHighlight"], "Maior valor de métrica deve receber destaque winner")
+        self.assertTrue(out["hasMinutos"])
+        self.assertTrue(out["hasGA90"])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

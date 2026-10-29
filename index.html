@@ -229,9 +229,10 @@
                 </div>
                 <div class="board-metrics">
                   <div class="pitch-formation-picker">
-                    <span class="board-metric">Formação: <strong id="tactical-formation"><strong id="xi-formation">4-3-3</strong></strong></span>
+                    <span class="board-metric">Formação:</span>
+                    <span id="tactical-formation" class="sr-only"><span id="xi-formation">4-3-3</span></span>
                     <select id="select-pitch-formation" class="select-control pitch-formation-select" title="Alterar formação tática" aria-label="Esquema Tático">
-                      <option value="auto">Auto (Detectar)</option>
+                      <option value="auto">Auto (4-3-3)</option>
                       <option value="4-3-3">4-3-3</option>
                       <option value="4-2-3-1">4-2-3-1</option>
                       <option value="4-4-2">4-4-2</option>
@@ -357,7 +358,7 @@
             <h2 class="card-title">Estatísticas do Elenco</h2>
           </div>
 
-          <!-- Alternador de Visão da Tabela (Segmented Control) e Filtro de Minutagem -->
+          <!-- Alternador de Visão da Tabela (Segmented Control) -->
           <div class="squad-view-controls">
             <div class="view-switch-bar" role="tablist" aria-label="Visualizações da Tabela de Elenco">
               <button id="btn-view-performance" class="view-btn active" role="tab" aria-selected="true" data-view="performance">
@@ -367,10 +368,6 @@
                 Contratos & Atributos
               </button>
             </div>
-            <label class="toggle-control" for="squad-min-minutes-toggle">
-              <input type="checkbox" id="squad-min-minutes-toggle">
-              Apenas com minutagem relevante (≥ 150 min)
-            </label>
           </div>
 
           <!-- Barra de Filtros do Elenco -->
@@ -398,6 +395,14 @@
                 <option value="reserva">Reservas (Banco)</option>
                 <option value="nao_relacionado">Não Relacionados</option>
               </select>
+            </div>
+
+            <div class="filter-group filter-group-toggle">
+              <label class="toggle-control min-minutes-pill-toggle" for="squad-min-minutes-toggle" title="Ocultar atletas com minutagem residual (< 150 min) ao ordenar por médias">
+                <input type="checkbox" id="squad-min-minutes-toggle">
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                <span class="toggle-label">Mín. 150 min</span>
+              </label>
             </div>
           </div>
 
@@ -507,6 +512,11 @@
               </tbody>
             </table>
           </div>
+          <div class="table-legend" aria-label="Legenda das zonas de classificação">
+            <span class="legend-item"><span class="legend-dot zone-promotion" aria-hidden="true"></span> Acesso Direto</span>
+            <span class="legend-item"><span class="legend-dot zone-playoffs" aria-hidden="true"></span> Playoffs de Acesso</span>
+            <span class="legend-item"><span class="legend-dot zone-relegation" aria-hidden="true"></span> Zona de Rebaixamento</span>
+          </div>
         </div>
 
         <!-- Tabela da Pré-Temporada -->
@@ -567,6 +577,34 @@
         <div id="modal-match-body" class="modal-body">
           <!-- Preenchido dinamicamente -->
         </div>
+      </div>
+    </div>
+
+    <!-- Modal de Comparação Head-to-Head -->
+    <div id="modal-compare" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-compare-title" tabindex="-1">
+      <div class="modal-dialog modal-dialog-lg">
+        <div class="modal-header">
+          <div class="modal-title-wrap">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>
+            <h2 id="modal-compare-title" class="modal-title">Comparar Atletas (Head-to-Head)</h2>
+          </div>
+          <button class="modal-close" aria-label="Fechar comparador de atletas">&times;</button>
+        </div>
+        <div id="modal-compare-body" class="modal-body">
+          <!-- Preenchido dinamicamente -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Bandeja Flutuante do Comparador (Head-to-Head) -->
+    <div id="compare-floating-tray" class="compare-floating-tray" style="display: none;" role="region" aria-label="Bandeja do Comparador de Atletas">
+      <div class="compare-tray-content">
+        <span class="compare-tray-icon">⇄</span>
+        <span id="compare-tray-text" class="compare-tray-text">1 atleta selecionado</span>
+      </div>
+      <div class="compare-tray-actions">
+        <button id="btn-open-compare-tray" class="btn btn-sm btn-primary" onclick="window.TrackerApp.openCompareModal();">Comparar</button>
+        <button id="btn-clear-compare-tray" class="btn btn-sm btn-ghost" onclick="window.TrackerApp.clearCompare();">Limpar</button>
       </div>
     </div>
 
