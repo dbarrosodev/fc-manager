@@ -25,3 +25,6 @@ saves/*
 CmMgr*
 *.save
 *.bin
+
+# Cópia local completa dos dados (contém nome/caminho do save pessoal)
+assets/data/local/

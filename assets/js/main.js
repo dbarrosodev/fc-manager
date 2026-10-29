@@ -183,12 +183,12 @@
     setText("club-league", club.liga || "LaLiga Hypermotion");
     setText("save-date", club.data_atual || "Indisponível");
     setText("career-season", club.temporada || "Temporada 1");
-    setText("current-save-name", normalizedData.save_file || "CmMgrSave");
+    setText("current-save-name", normalizedData.save_file || "Save local");
 
-    // Métricas estritamente separadas
-    setText("stat-league-record", `${liga.jogos || 3}J: ${liga.vitorias || 2}V ${liga.empates || 1}E ${liga.derrotas || 0}D`);
-    setText("stat-preseason-record", pre.titulo || "Campeão");
-    setText("stat-total-record", `${tot.jogos || 6}J: ${tot.vitorias || 4}V ${tot.empates || 2}E ${tot.derrotas || 0}D (Invicto)`);
+    // Métricas estritamente separadas (sem números fictícios de fallback)
+    setText("stat-league-record", `${liga.jogos || 0}J: ${liga.vitorias || 0}V ${liga.empates || 0}E ${liga.derrotas || 0}D`);
+    setText("stat-preseason-record", pre.titulo || "-");
+    setText("stat-total-record", `${tot.jogos || 0}J: ${tot.vitorias || 0}V ${tot.empates || 0}E ${tot.derrotas || 0}D${tot.invicto ? " (Invicto)" : ""}`);
     setText("stat-squad-value", Domain.formatCurrency(club.valor_elenco_total || 0));
     setText("stat-wage-bill", `${Domain.formatCurrency(club.folha_salarial_semanal || 0)} /sem`);
     setText("stat-goals-total", `${club.total_gols_elenco || 0} GP · ${club.total_assistencias_elenco || 0} Assists`);
@@ -202,12 +202,12 @@
     const matches = normalizedData.matches || [];
     const squad = normalizedData.squad || [];
 
-    // 1. Card de Última Partida
-    const lastMatch = club.ultima_partida || (matches.length > 0 ? matches[matches.length - 1] : null);
+    // 1. Card de Última Partida — sempre o registro completo resolvido pelo domínio
+    const lastMatch = club.ultima_partida || null;
     if (lastMatch) {
-      setText("hero-match-date-comp", `${lastMatch.competicao} · ${lastMatch.data}`);
+      setText("hero-match-date-comp", `${lastMatch.competicao || "-"} · ${lastMatch.data || "-"}`);
       setText("hero-match-home", lastMatch.mandante);
-      setText("hero-match-score", `${lastMatch.placar_mandante} - ${lastMatch.placar_visitante}`);
+      setText("hero-match-score", formatScore(lastMatch, " - "));
       setText("hero-match-away", lastMatch.visitante);
       setText("hero-match-scorers", lastMatch.artilheiros || "Nenhum gol registrado");
 
@@ -402,19 +402,17 @@
     }
 
     container.innerHTML = filtered.map(m => {
-      const isWin = m.resultado === "V";
-      const isDraw = m.resultado === "E";
-      const resClass = isWin ? "win" : isDraw ? "draw" : "loss";
+      const resClass = m.resultado_css || Domain.getResultMeta(m.resultado_canonico).css;
 
       return `
         <div class="match-card">
           <div class="match-card-top">
             <span>${Domain.escapeHtml(m.competicao)} · ${Domain.escapeHtml(m.data)}</span>
-            <span class="badge badge-result ${resClass}">${m.resultado}</span>
+            <span class="badge badge-result ${resClass}">${Domain.escapeHtml(m.resultado)}</span>
           </div>
           <div class="match-card-teams">
             <span class="match-team-name">${Domain.escapeHtml(m.mandante)}</span>
-            <span class="match-score-pill">${m.placar_mandante} - ${m.placar_visitante}</span>
+            <span class="match-score-pill">${Domain.escapeHtml(formatScore(m, " - "))}</span>
             <span class="match-team-name away">${Domain.escapeHtml(m.visitante)}</span>
           </div>
           <div class="match-card-info">
@@ -713,7 +711,7 @@
 
     lastFocusedElement = document.activeElement;
 
-    setText("modal-match-title", `${match.mandante} ${match.placar_mandante} x ${match.placar_visitante} ${match.visitante} — ${match.data}`);
+    setText("modal-match-title", `${match.mandante} ${formatScore(match, " x ")} ${match.visitante} — ${match.data}`);
 
     const body = document.getElementById("modal-match-body");
     if (!body) return;
@@ -977,6 +975,14 @@
   function setText(id, text) {
     const el = document.getElementById(id);
     if (el) el.textContent = text !== undefined && text !== null ? text : "—";
+  }
+
+  /** Placar "M sep V" de uma partida normalizada; nunca produz "undefined". */
+  function formatScore(match, sep) {
+    const pm = match ? match.placar_mandante : null;
+    const pv = match ? match.placar_visitante : null;
+    if (pm === null || pm === undefined || pv === null || pv === undefined) return "-";
+    return `${pm}${sep || " - "}${pv}`;
   }
 
   function showToast(message, type = "info") {

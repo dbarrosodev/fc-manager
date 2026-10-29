@@ -3,7 +3,7 @@
 > **Aplicação desktop-first de análise de desempenho, auditoria e gestão de elenco para carreiras do EA SPORTS FC 26.**  
 > Inspirado na linguagem visual de ferramentas de análise esportiva profissional (Wyscout, Transfermarkt Pro, Football Manager).
 
-[![Auditoria de Integridade](https://img.shields.io/badge/Auditoria-18%2F18%20Testes%20Aprovados-10b981?style=flat-square)](tests/test_audit_suite.py)
+[![Auditoria de Integridade](https://img.shields.io/badge/Testes-34%2F34%20Aprovados-10b981?style=flat-square)](tests/)
 [![Deploy](https://img.shields.io/badge/Deploy-GitHub%20Pages%20Ready-38bdf8?style=flat-square)](https://dbarrosodev.github.io/fc-manager/)
 [![Modo](https://img.shields.io/badge/Execução-Estática%20%2B%20Servidor%20Local-1e293b?style=flat-square)](#como-executar-localmente)
 
@@ -58,7 +58,10 @@ fc-manager/
 │   └── .gitkeep                               # Pasta mantida no Git sem versionar arquivos binários pessoais
 │
 ├── tests/
-│   └── test_audit_suite.py                    # Suíte oficial de regressão e auditoria (18 cenários completos)
+│   ├── test_audit_suite.py                    # Suíte oficial de regressão e auditoria (18 cenários completos)
+│   ├── test_match_regression.py               # Regressões do último confronto e das cores de resultado (UI real)
+│   ├── test_public_data_privacy.py            # Garante que dados publicados não expõem o save pessoal
+│   └── ui_harness.js                          # Executa main.js com DOM simulado para testes de renderização
 │
 └── docs/
     └── plan.md                                # Plano arquitetural e especificações funcionais
@@ -76,9 +79,9 @@ fc-manager/
 
 ---
 
-## 🧪 Suíte de Testes Automatizada (18 Cenários)
+## 🧪 Suíte de Testes Automatizada (34 Cenários)
 
-O projeto conta com validação contínua cobrindo 18 cenários críticos:
+O projeto conta com validação contínua. A suíte de auditoria original cobre 18 cenários críticos:
 
 ```bash
 python tests/test_audit_suite.py
@@ -104,6 +107,40 @@ python tests/test_audit_suite.py
 | 16 | **Sanitização XSS** | Escape HTML rigoroso de strings potencialmente maliciosas. |
 | 17 | **Navegação Acessível** | Modais com atributos ARIA e suporte a fechamento pela tecla `Escape`. |
 | 18 | **Responsividade & Numerais** | Tabelas com scroll horizontal seguro e numerais tabulares esportivos. |
+
+### Regressões da revisão v3.2 (`tests/test_match_regression.py`)
+
+Testes de domínio **e de renderização**: `tests/ui_harness.js` executa o `main.js` real com um DOM simulado (sem navegador) e verifica o texto que a interface escreve na tela.
+
+| # | Cenário de Teste | Validação Executada |
+|---|------------------|---------------------|
+| 19 | **Último confronto — resumo legado** | `club.ultima_partida` sem mandante/placares é resolvido para o registro completo da partida. |
+| 20 | **Último confronto — sem registro** | Resumo isolado é normalizado a partir de `mando`/`placar` (jogo fora inverte mandante/visitante). |
+| 21 | **Último confronto — id obsoleto** | Resumo apontando para id inexistente cai para a partida mais recente por data. |
+| 22 | **Último confronto — dado publicado** | O resumo publicado aponta para a partida mais recente. |
+| 23 | **UI: card do último jogo** | O card nunca exibe `undefined`/`null` e mostra mandante, placar e visitante corretos. |
+| 24 | **UI: ficha técnica** | Título e escalação da ficha sem `undefined` (posição, assistências, nota). |
+| 25 | **Padronização de resultados** | `V`/`Vitória`/`W`, `E`/`Empate`, `D`/`Derrota` → valores canônicos; derivação pelo placar. |
+| 26 | **Contagem com formatos mistos** | `V` e `Vitória` misturados produzem o mesmo total de V/E/D e pontos. |
+| 27 | **UI: cores dos resultados** | `Vitória`→verde, `Empate`→empate, `Derrota`→derrota, com texto longo ou sigla. |
+| 28 | **UI: cores com dados reais** | A cor de cada card coincide com o placar da partida publicada. |
+| 29 | **Guarda estática** | `main.js` não volta a comparar resultado com `"V"`/`"E"` nem usar números fictícios. |
+
+### Privacidade dos dados publicados (`tests/test_public_data_privacy.py`)
+
+| # | Cenário de Teste | Validação Executada |
+|---|------------------|---------------------|
+| 30 | **Nenhum save versionado** | `saves/` contém apenas `.gitkeep`; nenhum `CmMgr*` rastreado pelo Git. |
+| 31 | **Sem identificadores de save** | Dados publicados (JSON, JS, CSV) não contêm nomes reais de saves. |
+| 32 | **Sem metadados de save** | `career_data.json` sem `save_path`, `available_saves` ou `ultimo_save`. |
+| 33 | **Sanitizador do pipeline** | `sanitize_for_public_export` remove metadados sem alterar a cópia local. |
+| 34 | **Cópia local ignorada** | `assets/data/local/` (dados completos para o servidor local) está no `.gitignore`. |
+
+Para rodar todas as suítes (requer Python 3 e Node.js):
+
+```bash
+python -m unittest discover -s tests -p "test_*.py" -v
+```
 
 ---
 

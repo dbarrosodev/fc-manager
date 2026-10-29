@@ -1,6 +1,5 @@
 {
-  "save_file": "CmMgrC20261027114537158",
-  "save_path": "saves/CmMgrC20261027114537158",
+  "save_file": "Save local (não publicado)",
   "updated_at": "29/10/2026 00:23:32",
   "club": {
     "id": 114554,
@@ -70,6 +69,10 @@
       "id": 6,
       "data": "31/08/2025",
       "competicao": "LaLiga Hypermotion (2ª Divisão)",
+      "mandante": "FC Andorra",
+      "visitante": "Burgos CF",
+      "placar_mandante": 1,
+      "placar_visitante": 1,
       "adversario": "Burgos CF",
       "mando": "Casa",
       "placar": "1 x 1",
@@ -42503,7 +42506,6 @@
       "pais": "Espanha",
       "treinador": "Carles Manso Rubio",
       "liga_atual": "LaLiga Hypermotion (Segunda División)",
-      "ultimo_save": "CmMgrC20261027114537158",
       "data_no_save": "31/08/2025",
       "num_temporadas": 1,
       "temporadas": [
@@ -43406,15 +43408,6 @@
           ]
         }
       ]
-    }
-  ],
-  "available_saves": [
-    {
-      "filename": "CmMgrC20261027114537158",
-      "path": "saves/CmMgrC20261027114537158",
-      "source": "Pasta saves/",
-      "mtime": 1793112337.3009415,
-      "mtime_str": "27/10/2026 11:45"
     }
   ]
 }

@@ -891,6 +891,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .badge-result.win { background: var(--sports-win); }
 .badge-result.draw { background: var(--sports-draw); }
 .badge-result.loss { background: var(--sports-loss); }
+.badge-result.unknown { background: var(--text-muted); }
 
 /* Confiança */
 .badge-conf-alta { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }

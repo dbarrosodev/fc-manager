@@ -136,6 +136,147 @@
     return p;
   }
 
+  // ==========================================================================
+  // NORMALIZAÇÃO DE PARTIDAS E RESULTADOS
+  // ==========================================================================
+
+  const RESULT_META = {
+    vitoria: { sigla: "V", label: "Vitória", css: "win" },
+    empate: { sigla: "E", label: "Empate", css: "draw" },
+    derrota: { sigla: "D", label: "Derrota", css: "loss" },
+    indefinido: { sigla: "-", label: "Indefinido", css: "unknown" }
+  };
+
+  function toIntOrNull(val) {
+    if (val === null || val === undefined || val === "") return null;
+    const n = Number(val);
+    return Number.isFinite(n) ? Math.trunc(n) : null;
+  }
+
+  /**
+   * Converte qualquer representação de resultado ("V", "Vitória", "vitoria", "W", "win"...)
+   * para o valor canônico: "vitoria" | "empate" | "derrota" | "indefinido".
+   * Se o texto não for reconhecido, deriva do placar (golsPro x golsContra) quando disponível.
+   */
+  function normalizeResult(raw, golsPro, golsContra) {
+    const key = String(raw === null || raw === undefined ? "" : raw)
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .trim().toLowerCase();
+
+    if (["v", "w", "vitoria", "win", "victory"].includes(key)) return "vitoria";
+    if (["e", "empate", "draw", "tie"].includes(key)) return "empate";
+    if (["d", "l", "derrota", "loss", "defeat"].includes(key)) return "derrota";
+
+    const gp = toIntOrNull(golsPro);
+    const gc = toIntOrNull(golsContra);
+    if (gp !== null && gc !== null) {
+      return gp > gc ? "vitoria" : gp < gc ? "derrota" : "empate";
+    }
+    return "indefinido";
+  }
+
+  function getResultMeta(canonical) {
+    return RESULT_META[canonical] || RESULT_META.indefinido;
+  }
+
+  /** Extrai [mandante, visitante] de um placar textual como "1 x 1" ou "2-0". */
+  function parseScoreText(placar) {
+    const m = String(placar || "").match(/(\d+)\s*[x×:\-–]\s*(\d+)/i);
+    return m ? [Number(m[1]), Number(m[2])] : [null, null];
+  }
+
+  /** Normaliza uma linha de escalação para os campos que a ficha técnica consome. */
+  function normalizeLineupEntry(entry) {
+    const e = Object.assign({}, entry || {});
+    e.posicao_jogada = String(e.posicao_jogada || e.posicao || "-").trim();
+    e.minutos = Number(e.minutos) || 0;
+    e.gols_partida = Number(e.gols_partida !== undefined ? e.gols_partida : e.gols) || 0;
+    const ast = e.assistencias_partida !== undefined ? e.assistencias_partida : e.assistencias;
+    e.assistencias_partida = (ast === "N/D" || ast === null || ast === undefined) ? "N/D" : (Number(ast) || 0);
+    e.nota_partida = Number(e.nota_partida !== undefined ? e.nota_partida : e.nota) || 0;
+    return e;
+  }
+
+  /**
+   * Normaliza uma partida garantindo SEMPRE: mandante, visitante, placar_mandante,
+   * placar_visitante, placar, gols_pro, gols_contra e resultado canônico.
+   * Aceita tanto o registro completo quanto o resumo legado (adversario/mando/placar).
+   */
+  function normalizeMatch(match, clubName) {
+    if (!match || typeof match !== "object") return null;
+    const m = Object.assign({}, match);
+    const club = String(clubName || "").trim() || "Meu Clube";
+    const mando = String(m.mando || "").trim().toLowerCase();
+    const isAway = mando.startsWith("fora") || mando === "away" || mando === "visitante";
+    const adversario = String(m.adversario || "").trim();
+
+    // Times
+    if (!m.mandante || !m.visitante) {
+      const opp = adversario || "Adversário";
+      if (!m.mandante) m.mandante = isAway ? opp : club;
+      if (!m.visitante) m.visitante = isAway ? club : opp;
+    }
+    m.mandante = String(m.mandante).trim();
+    m.visitante = String(m.visitante).trim();
+    if (!adversario) {
+      m.adversario = m.mandante === club ? m.visitante : m.mandante;
+    }
+
+    // Placar numérico (campos explícitos -> placar textual -> gols pró/contra)
+    let pm = toIntOrNull(m.placar_mandante);
+    let pv = toIntOrNull(m.placar_visitante);
+    if (pm === null || pv === null) {
+      const [tm, tv] = parseScoreText(m.placar);
+      if (pm === null) pm = tm;
+      if (pv === null) pv = tv;
+    }
+    if (pm === null || pv === null) {
+      const gp = toIntOrNull(m.gols_pro);
+      const gc = toIntOrNull(m.gols_contra);
+      if (gp !== null && gc !== null) {
+        pm = isAway ? gc : gp;
+        pv = isAway ? gp : gc;
+      }
+    }
+    m.placar_mandante = pm;
+    m.placar_visitante = pv;
+    const hasScore = pm !== null && pv !== null;
+    m.placar = hasScore ? `${pm} x ${pv}` : "-";
+
+    if (toIntOrNull(m.gols_pro) === null && hasScore) m.gols_pro = isAway ? pv : pm;
+    if (toIntOrNull(m.gols_contra) === null && hasScore) m.gols_contra = isAway ? pm : pv;
+    if (!m.mando) m.mando = isAway ? "Fora" : "Casa";
+
+    // Resultado canônico (o texto original fica preservado em resultado_original)
+    m.resultado_original = m.resultado;
+    m.resultado_canonico = normalizeResult(m.resultado, m.gols_pro, m.gols_contra);
+    const meta = getResultMeta(m.resultado_canonico);
+    m.resultado = meta.label;
+    m.resultado_sigla = meta.sigla;
+    m.resultado_css = meta.css;
+
+    m.escalacao = Array.isArray(m.escalacao) ? m.escalacao.map(normalizeLineupEntry) : [];
+    return m;
+  }
+
+  /**
+   * Resolve a última partida SEMPRE a partir do registro completo em `matches`.
+   * O resumo `club.ultima_partida` é usado apenas como ponteiro (id); se não houver
+   * registro correspondente, o próprio resumo é normalizado como fallback.
+   */
+  function resolveLastMatch(matches, summary, clubName) {
+    const list = Array.isArray(matches) ? matches : [];
+    if (summary && typeof summary === "object" && summary.id !== undefined && summary.id !== null) {
+      const byId = list.find(m => String(m.id) === String(summary.id));
+      if (byId) return byId;
+    }
+    if (list.length > 0) {
+      const sorted = list.slice().sort((a, b) => (Number(a.date_int) || 0) - (Number(b.date_int) || 0));
+      return sorted[sorted.length - 1];
+    }
+    return summary && typeof summary === "object" ? normalizeMatch(summary, clubName) : null;
+  }
+
   /**
    * Normaliza a estrutura completa da carreira garantindo separação das competições.
    */
@@ -143,22 +284,25 @@
     const safeRaw = (rawData && typeof rawData === "object") ? rawData : {};
     const data = Object.assign({}, safeRaw);
 
-    // Sanitizar caminhos do save (remover caminhos absolutos do Windows)
-    data.save_file = String(data.save_file || "CmMgrSave").replace(/^.*[\\\/]/, "");
-    data.save_path = data.save_file ? `saves/${data.save_file}` : "saves/CmMgrSave";
+    // Sanitizar caminhos do save (remover caminhos absolutos do Windows).
+    // Dados publicados não trazem save_path: não fabricamos um caminho que não existe.
+    data.save_file = String(data.save_file || "Save local").replace(/^.*[\\\/]/, "");
+    data.save_path = data.save_path ? `saves/${String(data.save_path).replace(/^.*[\\\/]/, "")}` : "";
     data.updated_at = String(data.updated_at || "").trim();
 
     // Normalizar elenco
     const rawSquad = Array.isArray(data.squad) ? data.squad : [];
     data.squad = rawSquad.map(normalizePlayerData).filter(Boolean);
 
-    // Normalizar partidas
-    data.matches = Array.isArray(data.matches) ? data.matches : [];
-    data.player_match_logs = Array.isArray(data.player_match_logs) ? data.player_match_logs : [];
-
     // Normalizar clube e separação de competições
     const c = Object.assign({}, data.club || {});
     c.nome = String(c.nome || "Clube Indefinido").trim();
+
+    // Normalizar partidas (placar, mandante/visitante e resultado canônico)
+    const rawMatches = Array.isArray(data.matches) ? data.matches : [];
+    data.matches = rawMatches.map(m => normalizeMatch(m, c.nome)).filter(Boolean);
+    data.player_match_logs = Array.isArray(data.player_match_logs) ? data.player_match_logs : [];
+
     c.treinador = String(c.treinador || "Treinador").trim();
     c.data_atual = (c.data_atual && String(c.data_atual).trim() !== "") ? String(c.data_atual).trim() : "Indisponível";
     c.temporada = String(c.temporada || "Temporada 1").trim();
@@ -170,15 +314,15 @@
     const ligaMatches = matches.filter(m => m.tipo_competicao === "Liga Nacional" || (m.competicao && m.competicao.includes("Liga")));
     const copaMatches = matches.filter(m => m.tipo_competicao !== "Liga Nacional" && !(m.competicao && m.competicao.includes("Liga")));
 
-    const wLiga = ligaMatches.filter(m => m.resultado === "Vitória" || m.resultado === "V").length;
-    const dLiga = ligaMatches.filter(m => m.resultado === "Empate" || m.resultado === "E").length;
-    const lLiga = ligaMatches.filter(m => m.resultado === "Derrota" || m.resultado === "D").length;
+    const wLiga = ligaMatches.filter(m => m.resultado_canonico === "vitoria").length;
+    const dLiga = ligaMatches.filter(m => m.resultado_canonico === "empate").length;
+    const lLiga = ligaMatches.filter(m => m.resultado_canonico === "derrota").length;
     const gpLiga = ligaMatches.reduce((acc, m) => acc + (Number(m.gols_pro) || 0), 0);
     const gcLiga = ligaMatches.reduce((acc, m) => acc + (Number(m.gols_contra) || 0), 0);
 
-    const wCopa = copaMatches.filter(m => m.resultado === "Vitória" || m.resultado === "V").length;
-    const dCopa = copaMatches.filter(m => m.resultado === "Empate" || m.resultado === "E").length;
-    const lCopa = copaMatches.filter(m => m.resultado === "Derrota" || m.resultado === "D").length;
+    const wCopa = copaMatches.filter(m => m.resultado_canonico === "vitoria").length;
+    const dCopa = copaMatches.filter(m => m.resultado_canonico === "empate").length;
+    const lCopa = copaMatches.filter(m => m.resultado_canonico === "derrota").length;
     const gpCopa = copaMatches.reduce((acc, m) => acc + (Number(m.gols_pro) || 0), 0);
     const gcCopa = copaMatches.reduce((acc, m) => acc + (Number(m.gols_contra) || 0), 0);
 
@@ -222,21 +366,9 @@
       }
     };
 
-    // Última partida disputada
-    if (!c.ultima_partida && matches.length > 0) {
-      const sortedMatches = matches.slice().sort((a, b) => (Number(a.date_int) || 0) - (Number(b.date_int) || 0));
-      const last = sortedMatches[sortedMatches.length - 1];
-      c.ultima_partida = {
-        id: last.id,
-        data: last.data,
-        competicao: last.competicao,
-        adversario: last.adversario,
-        mando: last.mando,
-        placar: last.placar,
-        resultado: last.resultado,
-        artilheiros: last.artilheiros || "—"
-      };
-    }
+    // Última partida disputada: o resumo vindo do JSON é apenas um ponteiro (id).
+    // A tela sempre recebe o registro completo e normalizado da partida.
+    c.ultima_partida = resolveLastMatch(matches, c.ultima_partida, c.nome);
 
     data.club = c;
 
@@ -479,6 +611,10 @@
   return {
     normalizePlayerData: normalizePlayerData,
     normalizeCareerData: normalizeCareerData,
+    normalizeMatch: normalizeMatch,
+    normalizeResult: normalizeResult,
+    getResultMeta: getResultMeta,
+    resolveLastMatch: resolveLastMatch,
     normalizeValidationReport: normalizeValidationReport,
     filterSquad: filterSquad,
     sortSquad: sortSquad,

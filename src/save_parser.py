@@ -1425,6 +1425,10 @@ def parse_save_file(save_path):
                 "id": last_match["id"],
                 "data": last_match["data"],
                 "competicao": last_match["competicao"],
+                "mandante": last_match["mandante"],
+                "visitante": last_match["visitante"],
+                "placar_mandante": last_match["placar_mandante"],
+                "placar_visitante": last_match["placar_visitante"],
                 "adversario": last_match["adversario"],
                 "mando": last_match["mando"],
                 "placar": last_match["placar"],
@@ -1625,14 +1629,15 @@ def update_careers_archive(career_data):
     career_key = f"{c['id']}_{c['treinador'].replace(' ', '_')}"
     entry = archive["careers"].get(career_key, {
         "career_key": career_key, "club_id": c["id"], "clube": c["nome"], "pais": c["pais"],
-        "treinador": c["treinador"], "liga_atual": c["liga"], "ultimo_save": career_data["save_file"],
+        "treinador": c["treinador"], "liga_atual": c["liga"],
         "ultima_atualizacao": career_data["updated_at"], "data_no_save": c["data_atual"], "temporadas": {}
     })
 
+    # careers_archive.json é publicado: não registrar o nome do arquivo de save pessoal
+    entry.pop("ultimo_save", None)
     entry["clube"] = c["nome"]
     entry["pais"] = c["pais"]
     entry["liga_atual"] = c["liga"]
-    entry["ultimo_save"] = career_data["save_file"]
     entry["ultima_atualizacao"] = career_data["updated_at"]
     entry["data_no_save"] = c["data_atual"]
 
@@ -1651,7 +1656,7 @@ def update_careers_archive(career_data):
     career_data["careers_archive_summary"] = [
         {
             "career_key": k, "clube": v["clube"], "pais": v["pais"], "treinador": v["treinador"],
-            "liga_atual": v["liga_atual"], "ultimo_save": v["ultimo_save"], "data_no_save": v["data_no_save"],
+            "liga_atual": v["liga_atual"], "data_no_save": v["data_no_save"],
             "num_temporadas": len(v.get("temporadas", {})), "temporadas": list(v.get("temporadas", {}).values())
         }
         for k, v in archive["careers"].items()
@@ -1996,6 +2001,25 @@ def sanitize_available_saves_for_export(saves_list):
     return sanitized
 
 
+# Rótulo neutro usado no lugar do nome real do save nos arquivos publicados.
+PUBLIC_SAVE_LABEL = "Save local (não publicado)"
+# Cópia completa (com metadados do save) usada apenas pelo servidor local. Ignorada pelo Git.
+LOCAL_DATA_DIR = os.path.join(DATA_DIR, "local")
+LOCAL_JSON_PATH = os.path.join(LOCAL_DATA_DIR, "career_data.local.json")
+
+
+def sanitize_for_public_export(career_data):
+    """Remove metadados do save pessoal (nome, caminho, lista de saves) dos dados publicados."""
+    public = copy.deepcopy(career_data)
+    public["save_file"] = PUBLIC_SAVE_LABEL
+    public.pop("save_path", None)
+    public.pop("available_saves", None)
+    for entry in public.get("careers_archive_summary", None) or []:
+        if isinstance(entry, dict):
+            entry.pop("ultimo_save", None)
+    return public
+
+
 def find_save_files():
     """Retorna a lista de caminhos de arquivos de save disponíveis."""
     saves = list_available_saves()
@@ -2009,13 +2033,21 @@ def run_full_pipeline(target_save=None):
     career_data = parse_save_file(target_save)
     career_data["available_saves"] = sanitize_available_saves_for_export(list_available_saves())
 
+    # Cópia completa apenas para o servidor local (assets/data/local/ está no .gitignore)
+    os.makedirs(LOCAL_DATA_DIR, exist_ok=True)
+    with open(LOCAL_JSON_PATH, "w", encoding="utf-8") as lf:
+        json.dump(career_data, lf, ensure_ascii=False, indent=2)
+
+    # Arquivos publicados (GitHub Pages): sem nome/caminho do save pessoal
+    public_data = sanitize_for_public_export(career_data)
+
     json_path = os.path.join(DATA_DIR, "career_data.json")
     with open(json_path, "w", encoding="utf-8") as jf:
-        json.dump(career_data, jf, ensure_ascii=False, indent=2)
+        json.dump(public_data, jf, ensure_ascii=False, indent=2)
 
     js_path = os.path.join(DATA_DIR, "career_data.js")
     with open(js_path, "w", encoding="utf-8") as jsf:
-        jsf.write("window.FALLBACK_CAREER_DATA = " + json.dumps(career_data, ensure_ascii=False) + ";\n")
+        jsf.write("window.FALLBACK_CAREER_DATA = " + json.dumps(public_data, ensure_ascii=False) + ";\n")
 
     csv_p, xlsx_p = export_spreadsheets(career_data, EXPORTS_DIR)
     return career_data

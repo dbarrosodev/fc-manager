@@ -54,7 +54,11 @@ class TrackerRequestHandler(SimpleHTTPRequestHandler):
             route = parsed.path
 
             if route == "/api/data":
-                json_path = os.path.join(DATA_DIR, "career_data.json")
+                # Prefere a cópia local completa (com metadados do save, não versionada);
+                # cai para o JSON público sanitizado se ela ainda não existir.
+                json_path = save_parser.LOCAL_JSON_PATH
+                if not os.path.exists(json_path):
+                    json_path = os.path.join(DATA_DIR, "career_data.json")
                 if not os.path.exists(json_path):
                     data = save_parser.run_full_pipeline()
                     return self._send_json(data)
