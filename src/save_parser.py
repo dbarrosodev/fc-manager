@@ -1187,23 +1187,20 @@ def parse_save_file(save_path, ledger_path=None):
     # Ler registros do buffer rotativo mham da EA (mantém até 3 partidas recentes do usuário)
     mham_parsed_records = []
     mham_pos = post_db.find(b'\x04\x00\x00\x00mham')
-    if mham_pos != -1:
-        mham_end = post_db.find(b'\x04\x00\x00\x00', mham_pos + 8)
-        mham_chunk = post_db[mham_pos:mham_end if mham_end != -1 else mham_pos + 2048]
-        if len(mham_chunk) >= 28:
-            m_count = struct.unpack('<I', mham_chunk[24:28])[0]
-            for idx_m in range(min(m_count, 60)):
-                ro = 28 + idx_m * 29
-                if ro + 17 <= len(mham_chunk):
-                    hid, aid, hsc, asc = struct.unpack('<IIII', mham_chunk[ro+1:ro+17])
-                    is_h = (hid == club_id)
-                    opp = aid if is_h else hid
-                    gp_c = hsc if is_h else asc
-                    gc_c = asc if is_h else hsc
-                    mham_parsed_records.append({
-                        "hid": hid, "aid": aid, "hsc": hsc, "asc": asc,
-                        "opp_id": opp, "is_home": is_h, "gp": gp_c, "gc": gc_c
-                    })
+    if mham_pos != -1 and len(post_db) >= mham_pos + 28:
+        m_count = struct.unpack('<I', post_db[mham_pos+24:mham_pos+28])[0]
+        for idx_m in range(min(m_count, 60)):
+            ro = mham_pos + 28 + idx_m * 29
+            if ro + 17 <= len(post_db):
+                hid, aid, hsc, asc = struct.unpack('<IIII', post_db[ro+1:ro+17])
+                is_h = (hid == club_id)
+                opp = aid if is_h else hid
+                gp_c = hsc if is_h else asc
+                gc_c = asc if is_h else hsc
+                mham_parsed_records.append({
+                    "hid": hid, "aid": aid, "hsc": hsc, "asc": asc,
+                    "opp_id": opp, "is_home": is_h, "gp": gp_c, "gc": gc_c
+                })
 
     date_to_mando = {}
     for mi in db0.get('career_managerinfo', []):
@@ -1719,6 +1716,12 @@ def parse_save_file(save_path, ledger_path=None):
         m["goleiro"] = gk_name
         m["escalacao"] = lineup
 
+        # Cálculo Automático dos Gols do Clube a partir dos Logs dos Jogadores (Camada 1)
+        calc_gp = sum(p.get("gols", 0) for p in lineup)
+        if m.get("gols_pro") is None or m.get("gols_pro") == 0:
+            if calc_gp > 0:
+                m["gols_pro"] = calc_gp
+
         # Populate artilheiros dynamically if empty, generic or placeholder
         if not m.get("artilheiros") or m.get("artilheiros") in ("-", "Nenhum"):
             scorers_in_match = [p for p in lineup if p.get("gols", 0) > 0]
@@ -1737,6 +1740,102 @@ def parse_save_file(save_path, ledger_path=None):
 
     laliga2_standings = next((c["tabela"] for c in club_competitions if c["categoria"] == "Liga Nacional"), [])
     preseason_standings = next((c["tabela"] for c in club_competitions if c["categoria"] != "Liga Nacional"), [])
+
+    user_l2_row = next((r for r in laliga2_standings if r["is_user"]), None)
+
+    # Reconciliação Inteligente via Tabela de Classificação (Standings Delta — Camada 2)
+    # Se houver partidas da Liga Nacional cujo placar ainda esteja indisponível,
+    # reconcilia os resultados a partir dos totais oficiais da tabela de classificação.
+    if user_l2_row:
+        league_matches = [m for m in matches_catalog if m.get("tipo_competicao") == "Liga Nacional"]
+        closed_league = [m for m in league_matches if m.get("placar_origem") in ("save", "histórico anterior", "confirmado", "manual") and m.get("placar_mandante") is not None]
+        unresolved_league = [m for m in league_matches if m.get("placar_origem") == "indisponível" or m.get("placar") == "Indisponível"]
+
+        if unresolved_league:
+            table_j = user_l2_row.get("jogos", len(league_matches))
+            table_w = user_l2_row.get("vitorias", 0)
+            table_d = user_l2_row.get("empates", 0)
+            table_l = user_l2_row.get("derrotas", 0)
+            table_gp = user_l2_row.get("gols_pro", 0)
+            table_gc = user_l2_row.get("gols_contra", 0)
+
+            known_w = sum(1 for m in closed_league if m.get("resultado") == "Vitória")
+            known_d = sum(1 for m in closed_league if m.get("resultado") == "Empate")
+            known_l = sum(1 for m in closed_league if m.get("resultado") == "Derrota")
+            known_gp = sum((m.get("gols_pro") or 0) for m in closed_league)
+            known_gc = sum((m.get("gols_contra") or 0) for m in closed_league)
+
+            delta_j = table_j - len(closed_league)
+            delta_w = max(0, table_w - known_w)
+            delta_d = max(0, table_d - known_d)
+            delta_l = max(0, table_l - known_l)
+            delta_gp = max(0, table_gp - known_gp)
+            delta_gc = max(0, table_gc - known_gc)
+
+            if len(unresolved_league) == 1 and delta_j == 1:
+                um = unresolved_league[0]
+                um_gp = delta_gp if um.get("gols_pro") is None else um["gols_pro"]
+                um_gc = delta_gc
+                res_canon = "Vitória" if delta_w > 0 else ("Empate" if delta_d > 0 else ("Derrota" if delta_l > 0 else ("Vitória" if um_gp > um_gc else ("Empate" if um_gp == um_gc else "Derrota"))))
+                is_home = (um.get("mando") != "Fora")
+                pm = um_gp if is_home else um_gc
+                pv = um_gc if is_home else um_gp
+                um["gols_pro"] = um_gp
+                um["gols_contra"] = um_gc
+                um["placar_mandante"] = pm
+                um["placar_visitante"] = pv
+                um["placar"] = f"{pm} x {pv}"
+                um["resultado"] = res_canon
+                um["placar_origem"] = "standings_delta"
+                if um.get("adversario") in ("Dados indisponíveis", "Indisponível", "-"):
+                    um["adversario"] = "Adversário (Liga Nacional)"
+                    um["mandante"] = club_name if is_home else "Adversário (Liga Nacional)"
+                    um["visitante"] = "Adversário (Liga Nacional)" if is_home else club_name
+
+            elif len(unresolved_league) == 2 and delta_j == 2:
+                table_home_gp = user_l2_row.get("casa_gp", 0)
+                table_home_gc = user_l2_row.get("casa_gc", 0)
+                table_away_gp = user_l2_row.get("fora_gp", 0)
+                table_away_gc = user_l2_row.get("fora_gc", 0)
+
+                known_home_gp = sum((m.get("gols_pro") or 0) for m in closed_league if m.get("mando") == "Casa")
+                known_home_gc = sum((m.get("gols_contra") or 0) for m in closed_league if m.get("mando") == "Casa")
+                known_away_gp = sum((m.get("gols_pro") or 0) for m in closed_league if m.get("mando") == "Fora")
+                known_away_gc = sum((m.get("gols_contra") or 0) for m in closed_league if m.get("mando") == "Fora")
+
+                d_home_gp = max(0, table_home_gp - known_home_gp)
+                d_home_gc = max(0, table_home_gc - known_home_gc)
+                d_away_gp = max(0, table_away_gp - known_away_gp)
+                d_away_gc = max(0, table_away_gc - known_away_gc)
+
+                for um in unresolved_league:
+                    um_calc_gp = sum(p.get("gols", 0) for p in um.get("escalacao", []))
+                    if um.get("mando") == "Casa" or (um_calc_gp == d_home_gp and d_home_gp != d_away_gp):
+                        um["mando"] = "Casa"
+                        um["gols_pro"] = d_home_gp
+                        um["gols_contra"] = d_home_gc
+                        um["placar_mandante"] = d_home_gp
+                        um["placar_visitante"] = d_home_gc
+                        um["placar"] = f"{d_home_gp} x {d_home_gc}"
+                        um["resultado"] = "Vitória" if d_home_gp > d_home_gc else ("Empate" if d_home_gp == d_home_gc else "Derrota")
+                        um["placar_origem"] = "standings_delta"
+                        if um.get("adversario") in ("Dados indisponíveis", "Indisponível", "-"):
+                            um["adversario"] = "Adversário (Liga Nacional)"
+                            um["mandante"] = club_name
+                            um["visitante"] = "Adversário (Liga Nacional)"
+                    else:
+                        um["mando"] = "Fora"
+                        um["gols_pro"] = d_away_gp
+                        um["gols_contra"] = d_away_gc
+                        um["placar_mandante"] = d_away_gc
+                        um["placar_visitante"] = d_away_gp
+                        um["placar"] = f"{d_away_gc} x {d_away_gp}"
+                        um["resultado"] = "Vitória" if d_away_gp > d_away_gc else ("Empate" if d_away_gp == d_away_gc else "Derrota")
+                        um["placar_origem"] = "standings_delta"
+                        if um.get("adversario") in ("Dados indisponíveis", "Indisponível", "-"):
+                            um["adversario"] = "Adversário (Liga Nacional)"
+                            um["mandante"] = "Adversário (Liga Nacional)"
+                            um["visitante"] = club_name
 
     season_history = []
     for mh in db0.get('career_managerhistory', []):

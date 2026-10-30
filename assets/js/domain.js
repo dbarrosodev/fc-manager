@@ -278,6 +278,16 @@
     m.resultado_css = meta.css;
 
     m.escalacao = Array.isArray(m.escalacao) ? m.escalacao.map(normalizeLineupEntry) : [];
+
+    // Cálculo Automático dos Gols do Clube a partir dos Logs/Escalação dos Atletas (Camada 1)
+    let lineupGoals = 0;
+    if (m.escalacao.length > 0) {
+      lineupGoals = m.escalacao.reduce((sum, p) => sum + (Number(p.gols_partida) || 0), 0);
+    }
+    if ((toIntOrNull(m.gols_pro) === null || m.gols_pro === 0) && lineupGoals > 0) {
+      m.gols_pro = lineupGoals;
+    }
+
     return m;
   }
 

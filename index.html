@@ -605,6 +605,60 @@
       </div>
     </div>
 
+    <!-- Modal para Completar Placar de Partida Pendente -->
+    <div id="modal-complete-match" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-complete-match-title" tabindex="-1">
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <div class="modal-title-wrap" style="display:flex; align-items:center; gap:0.5rem;">
+            <i class="ph-bold ph-pencil-simple" style="font-size: 1.25rem; color: var(--color-primary);" aria-hidden="true"></i>
+            <h2 id="modal-complete-match-title" class="modal-title">Completar Placar da Partida</h2>
+          </div>
+          <button class="modal-close" aria-label="Fechar editor de partida">&times;</button>
+        </div>
+        <div id="modal-complete-match-body" class="modal-body">
+          <form id="form-complete-match" onsubmit="event.preventDefault(); window.TrackerApp.saveCompleteMatch();">
+            <input type="hidden" id="edit-match-id" />
+            <input type="hidden" id="edit-match-date-int" />
+            <div class="form-group" style="margin-bottom: 0.85rem;">
+              <label for="edit-match-date" style="display:block; font-size: 0.75rem; margin-bottom: 0.25rem; color: var(--text-muted); text-transform: uppercase; font-weight:600;">Data da Partida</label>
+              <input type="text" id="edit-match-date" class="filter-input" readonly style="width: 100%; opacity: 0.85; cursor: not-allowed;" />
+            </div>
+            <div class="form-group" style="margin-bottom: 0.85rem;">
+              <label for="edit-match-competition" style="display:block; font-size: 0.75rem; margin-bottom: 0.25rem; color: var(--text-muted); text-transform: uppercase; font-weight:600;">Competição</label>
+              <input type="text" id="edit-match-competition" class="filter-input" readonly style="width: 100%; opacity: 0.85; cursor: not-allowed;" />
+            </div>
+            <div class="form-group" style="margin-bottom: 0.85rem;">
+              <label for="edit-match-opponent" style="display:block; font-size: 0.75rem; margin-bottom: 0.25rem; font-weight: 600; text-transform: uppercase;">Adversário</label>
+              <select id="edit-match-opponent" class="select-control" style="width: 100%;" required>
+                <!-- Preenchido dinamicamente com os clubes da liga/competição -->
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 0.85rem;">
+              <label for="edit-match-venue" style="display:block; font-size: 0.75rem; margin-bottom: 0.25rem; font-weight: 600; text-transform: uppercase;">Mando de Campo (FC Andorra)</label>
+              <select id="edit-match-venue" class="select-control" style="width: 100%;" required>
+                <option value="Casa">Casa (Mandante)</option>
+                <option value="Fora">Fora (Visitante)</option>
+              </select>
+            </div>
+            <div class="form-row" style="display: flex; gap: 1rem; margin-bottom: 1.25rem;">
+              <div class="form-group" style="flex: 1;">
+                <label id="lbl-score-home" for="edit-score-home" style="display:block; font-size: 0.75rem; margin-bottom: 0.25rem; font-weight: 600; text-transform: uppercase;">Gols Mandante</label>
+                <input type="number" id="edit-score-home" min="0" max="99" class="filter-input" style="width: 100%; font-size: 1.15rem; text-align: center; font-weight: bold; font-family: var(--font-mono);" required />
+              </div>
+              <div class="form-group" style="flex: 1;">
+                <label id="lbl-score-away" for="edit-score-away" style="display:block; font-size: 0.75rem; margin-bottom: 0.25rem; font-weight: 600; text-transform: uppercase;">Gols Visitante</label>
+                <input type="number" id="edit-score-away" min="0" max="99" class="filter-input" style="width: 100%; font-size: 1.15rem; text-align: center; font-weight: bold; font-family: var(--font-mono);" required />
+              </div>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+              <button type="button" class="btn btn-sm btn-ghost modal-close">Cancelar</button>
+              <button type="submit" class="btn btn-sm btn-primary"><i class="ph-bold ph-check"></i> Salvar e Atualizar</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
     <!-- Bandeja Flutuante do Comparador (Head-to-Head) -->
     <div id="compare-floating-tray" class="compare-floating-tray" style="display: none;" role="region" aria-label="Bandeja do Comparador de Atletas">
       <div class="compare-tray-content">

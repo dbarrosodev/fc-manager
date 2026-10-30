@@ -159,6 +159,78 @@ class TrackerRequestHandler(SimpleHTTPRequestHandler):
             data = save_parser.run_full_pipeline(dest)
             return self._send_json(data)
 
+        if route == "/api/match_update":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length).decode("utf-8") if length > 0 else "{}"
+            body = json.loads(raw)
+
+            club_id = int(body.get("club_id") or 114554)
+            date_int = int(body.get("date_int") or 0)
+            opp_id = int(body.get("opp_id") or 0)
+            if not date_int or not opp_id:
+                return self._send_json({"error": "date_int e opp_id são obrigatórios"}, 400)
+
+            ledger = save_parser.load_match_ledger()
+
+            # Remove qualquer entrada anterior para esta data e clube que tenha opp_id diferente
+            for k in list(ledger.keys()):
+                parts = k.split("_")
+                if len(parts) == 3 and int(parts[0]) == club_id and int(parts[1]) == date_int and int(parts[2]) != opp_id:
+                    del ledger[k]
+
+            ledger_key = f"{club_id}_{date_int}_{opp_id}"
+
+            mando = body.get("mando", "Casa")
+            pm = body.get("placar_mandante")
+            pv = body.get("placar_visitante")
+            if pm is not None:
+                pm = int(pm)
+            if pv is not None:
+                pv = int(pv)
+
+            club_name = body.get("club_name", "FC Andorra")
+            opp_name = body.get("opp_name", f"Time {opp_id}")
+            is_home = (mando == "Casa")
+            mandante = club_name if is_home else opp_name
+            visitante = opp_name if is_home else club_name
+
+            gp = pm if is_home else pv
+            gc = pv if is_home else pm
+
+            resultado = "Vitória" if (gp is not None and gc is not None and gp > gc) else (
+                "Empate" if (gp is not None and gc is not None and gp == gc) else (
+                    "Derrota" if (gp is not None and gc is not None and gp < gc) else "Indefinido"
+                )
+            )
+
+            data_str = body.get("data") or f"{str(date_int)[6:8]}/{str(date_int)[4:6]}/{str(date_int)[0:4]}"
+
+            ledger[ledger_key] = {
+                "date_int": date_int,
+                "data": data_str,
+                "club_id": club_id,
+                "opp_id": opp_id,
+                "opp_name": opp_name,
+                "competicao": body.get("competicao", "LaLiga Hypermotion"),
+                "tipo_competicao": body.get("tipo_competicao", "Liga Nacional"),
+                "rodada": body.get("rodada", "Rodada"),
+                "mando": mando,
+                "mandante": mandante,
+                "visitante": visitante,
+                "placar_mandante": pm,
+                "placar_visitante": pv,
+                "placar": f"{pm} x {pv}" if pm is not None and pv is not None else "Indisponível",
+                "resultado": resultado,
+                "gols_pro": gp,
+                "gols_contra": gc,
+                "placar_origem": "manual",
+                "resumo": body.get("resumo", f"Partida realizada em {data_str} contra o {opp_name} ({pm} x {pv}).")
+            }
+            save_parser.save_match_ledger(ledger)
+
+            data = save_parser.run_full_pipeline()
+            return self._send_json({"ok": True, "career_data": data})
+
         return self._send_json({"error": "Rota nao encontrada"}, 404)
 
 

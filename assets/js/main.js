@@ -114,6 +114,21 @@
       }
     }
 
+    // 1.5. Verificar save customizado persistido no localStorage (Web / GitHub Pages)
+    try {
+      const customSaved = localStorage.getItem("fc_custom_career_data");
+      if (customSaved) {
+        const parsedCustom = JSON.parse(customSaved);
+        if (parsedCustom && typeof parsedCustom === "object" && parsedCustom.squad) {
+          rawData = parsedCustom;
+          isLocalServer = false;
+          updateSourceBadge("Dados Personalizados (Storage)", "info");
+          processAndRender();
+          return;
+        }
+      }
+    } catch (e) {}
+
     // 2. Tentar carregar assets/data/career_data.json (GitHub Pages)
     try {
       const resp = await fetch("assets/data/career_data.json", { cache: "no-store" });
@@ -161,6 +176,22 @@
 
   function processAndRender() {
     try {
+      // Aplicar overrides de partidas persistidos no localStorage (se houver)
+      try {
+        const overridesStr = localStorage.getItem("fc_match_overrides");
+        if (overridesStr && rawData && Array.isArray(rawData.matches)) {
+          const overrides = JSON.parse(overridesStr);
+          rawData.matches.forEach(m => {
+            const dateInt = m.date_int;
+            if (dateInt && overrides[dateInt]) {
+              Object.assign(m, overrides[dateInt]);
+            }
+          });
+        }
+      } catch (ovErr) {
+        console.warn("Aviso ao aplicar overrides de partidas:", ovErr);
+      }
+
       normalizedData = Domain.normalizeCareerData(rawData);
       renderAll();
       setAppState(APP_STATE.LOADED);
@@ -979,6 +1010,27 @@
         ? ' <span style="font-size:10.5px; color:var(--text-muted);" title="Placar recuperado do histórico anterior consolidado (partida rotacionada do buffer recente da EA)">· Histórico</span>'
         : (m.placar_origem === 'indisponível' ? ' <span style="font-size:10.5px; color:var(--sports-loss);">· Placar Indisponível</span>' : '');
 
+      const isPending = m.placar_origem === 'indisponível' || 
+                        m.placar === '-' || 
+                        m.placar === 'Indisponível' || 
+                        m.adversario === 'Dados indisponíveis' || 
+                        m.adversario === 'Adversário';
+
+      const actionButtons = isPending ? `
+        <div style="display:flex; gap:0.5rem; margin-top:auto;">
+          <button class="btn btn-sm" style="flex:1;" onclick="event.stopPropagation(); window.TrackerApp.openMatchModal(${m.id})">
+            Ver Ficha
+          </button>
+          <button class="btn btn-sm btn-primary" style="flex:1; display:inline-flex; align-items:center; justify-content:center; gap:0.25rem;" onclick="event.stopPropagation(); window.TrackerApp.openCompleteMatchModal(${m.id})">
+            <i class="ph-bold ph-pencil-simple"></i> Completar Placar
+          </button>
+        </div>
+      ` : `
+        <button class="btn btn-sm" style="margin-top:auto;" onclick="event.stopPropagation(); window.TrackerApp.openMatchModal(${m.id})">
+          Ver Ficha Técnica
+        </button>
+      `;
+
       return `
         <div class="match-card" tabindex="0" role="button" aria-label="Ver ficha da partida ${Domain.escapeHtml(m.mandante)} contra ${Domain.escapeHtml(m.visitante)}" onclick="window.TrackerApp.openMatchModal(${m.id})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); window.TrackerApp.openMatchModal(${m.id});}">
           <div class="match-card-top match-card-header">
@@ -1001,9 +1053,7 @@
             <div style="color:var(--text-muted);">Goleiro: ${Domain.escapeHtml(m.goleiro || "—")}</div>
           </div>
           ${motmHtml}
-          <button class="btn btn-sm" style="margin-top:auto;" onclick="event.stopPropagation(); window.TrackerApp.openMatchModal(${m.id})">
-            Ver Ficha Técnica
-          </button>
+          ${actionButtons}
         </div>
       `;
     }).join("");
@@ -1468,7 +1518,29 @@
       </div>
     ` : "";
 
+    const isPending = match.placar_origem === 'indisponível' || 
+                      match.placar === '-' || 
+                      match.placar === 'Indisponível' || 
+                      match.adversario === 'Dados indisponíveis' || 
+                      match.adversario === 'Adversário';
+
+    const completeBanner = isPending ? `
+      <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(239, 68, 68, 0.1); border:1px solid rgba(239, 68, 68, 0.3); border-radius:8px; padding:0.75rem 1rem; margin-bottom:1rem;">
+        <span style="font-size:0.85rem; color:var(--text-secondary);"><i class="ph-bold ph-warning-circle" style="color:var(--sports-loss);"></i> Esta partida está com adversário ou placar pendente.</span>
+        <button class="btn btn-sm btn-primary" onclick="window.TrackerApp.openCompleteMatchModal(${match.id});">
+          <i class="ph-bold ph-pencil-simple"></i> Completar Placar
+        </button>
+      </div>
+    ` : `
+      <div style="display:flex; justify-content:flex-end; margin-bottom:0.75rem;">
+        <button class="btn btn-sm btn-ghost" style="font-size:11.5px; color:var(--text-muted);" onclick="window.TrackerApp.openCompleteMatchModal(${match.id});">
+          <i class="ph-bold ph-pencil-simple"></i> Editar Placar / Adversário
+        </button>
+      </div>
+    `;
+
     body.innerHTML = `
+      ${completeBanner}
       <div class="detail-block">
         <div class="detail-block-title">Resumo do Confronto</div>
         <div class="detail-row"><span class="detail-label">Competição</span><span class="detail-val">${Domain.escapeHtml(match.competicao)}</span></div>
@@ -1513,6 +1585,264 @@
       lastFocusedElement.focus();
       lastFocusedElement = null;
     }
+  }
+
+  // ==========================================================================
+  // MODAL PARA COMPLETAR / EDITAR PLACAR E ADVERSÁRIO DA PARTIDA
+  // ==========================================================================
+  function openCompleteMatchModal(matchId) {
+    if (!normalizedData || !normalizedData.matches) return;
+    const match = normalizedData.matches.find(m => m.id === matchId);
+    if (!match) return;
+
+    lastFocusedElement = document.activeElement;
+
+    // Se o modal da ficha técnica estiver aberto, fecha
+    const matchModal = document.getElementById("modal-match");
+    if (matchModal && matchModal.classList.contains("open")) {
+      matchModal.classList.remove("open");
+    }
+
+    const modal = document.getElementById("modal-complete-match");
+    if (!modal) return;
+
+    const idInput = document.getElementById("edit-match-id");
+    const dateIntInput = document.getElementById("edit-match-date-int");
+    const dateInput = document.getElementById("edit-match-date");
+    const compInput = document.getElementById("edit-match-competition");
+    const oppSelect = document.getElementById("edit-match-opponent");
+    const venueSelect = document.getElementById("edit-match-venue");
+    const scoreHome = document.getElementById("edit-score-home");
+    const scoreAway = document.getElementById("edit-score-away");
+    const lblHome = document.getElementById("lbl-score-home");
+    const lblAway = document.getElementById("lbl-score-away");
+
+    if (idInput) idInput.value = match.id;
+    if (dateIntInput) dateIntInput.value = match.date_int || "";
+    if (dateInput) dateInput.value = match.data || "";
+    const compName = match.competicao || "LaLiga Hypermotion";
+    if (compInput) compInput.value = compName;
+
+    // Coletar clubes da competição para popular o dropdown de adversários
+    if (oppSelect) {
+      const clubId = (normalizedData.club && normalizedData.club.id) || 114554;
+      const teamMap = new Map();
+
+      // De standings
+      if (normalizedData.standings) {
+        Object.values(normalizedData.standings).forEach(val => {
+          if (Array.isArray(val)) {
+            val.forEach(row => {
+              const tid = row.teamid || row.team_id;
+              const tname = row.time || row.nome;
+              if (tid && tname && tid !== clubId) {
+                teamMap.set(tid, tname);
+              }
+            });
+          }
+        });
+      }
+
+      // De club_competitions se disponível
+      if (normalizedData.club_competitions && Array.isArray(normalizedData.club_competitions)) {
+        normalizedData.club_competitions.forEach(c => {
+          if (c.tabela && Array.isArray(c.tabela)) {
+            c.tabela.forEach(row => {
+              const tid = row.teamid || row.team_id;
+              const tname = row.time || row.nome;
+              if (tid && tname && tid !== clubId) {
+                teamMap.set(tid, tname);
+              }
+            });
+          }
+        });
+      }
+
+      // De matches conhecidas
+      if (normalizedData.matches) {
+        normalizedData.matches.forEach(m => {
+          if (m.adversario && m.adversario !== "Adversário" && m.adversario !== "Dados indisponíveis" && m.adversario !== "-") {
+            const oppId = m.opp_id || (m.mandante === normalizedData.club.nome ? m.visitante_id : m.mandante_id);
+            if (oppId && oppId !== clubId) {
+              teamMap.set(oppId, m.adversario);
+            }
+          }
+        });
+      }
+
+      const sortedTeams = Array.from(teamMap.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+      oppSelect.innerHTML = `<option value="">Selecione o adversário...</option>` +
+        sortedTeams.map(([tid, tname]) => {
+          const isSelected = (match.opp_id && match.opp_id === tid) || (match.adversario && match.adversario.toLowerCase() === tname.toLowerCase());
+          return `<option value="${tid}" data-name="${Domain.escapeHtml(tname)}" ${isSelected ? "selected" : ""}>${Domain.escapeHtml(tname)}</option>`;
+        }).join("");
+    }
+
+    // Mando de campo
+    const isAway = (match.mando || "").toLowerCase().includes("fora") || match.visitante === (normalizedData.club && normalizedData.club.nome);
+    if (venueSelect) {
+      venueSelect.value = isAway ? "Fora" : "Casa";
+    }
+
+    // Calcular gols do clube a partir dos logs / escalação
+    let clubGoals = 0;
+    if (match.escalacao && match.escalacao.length > 0) {
+      clubGoals = match.escalacao.reduce((sum, p) => sum + (Number(p.gols_partida) || Number(p.gols) || 0), 0);
+    }
+    if (match.gols_pro !== null && match.gols_pro !== undefined && match.gols_pro > 0) {
+      clubGoals = match.gols_pro;
+    }
+
+    function updateScoreLabels() {
+      const curMando = venueSelect ? venueSelect.value : (isAway ? "Fora" : "Casa");
+      const clubName = (normalizedData.club && normalizedData.club.nome) || "FC Andorra";
+      const oppOption = oppSelect && oppSelect.selectedOptions && oppSelect.selectedOptions[0];
+      const oppName = (oppOption && oppOption.getAttribute("data-name")) || match.adversario || "Adversário";
+
+      if (curMando === "Casa") {
+        if (lblHome) lblHome.textContent = `${clubName} (Mandante)`;
+        if (lblAway) lblAway.textContent = `${oppName} (Visitante)`;
+        if (scoreHome) scoreHome.value = clubGoals;
+        if (scoreAway && (scoreAway.value === "" || scoreAway.value == null)) {
+          scoreAway.value = (match.gols_contra !== null && match.gols_contra !== undefined) ? match.gols_contra : 0;
+        }
+      } else {
+        if (lblHome) lblHome.textContent = `${oppName} (Mandante)`;
+        if (lblAway) lblAway.textContent = `${clubName} (Visitante)`;
+        if (scoreAway) scoreAway.value = clubGoals;
+        if (scoreHome && (scoreHome.value === "" || scoreHome.value == null)) {
+          scoreHome.value = (match.gols_contra !== null && match.gols_contra !== undefined) ? match.gols_contra : 0;
+        }
+      }
+    }
+
+    updateScoreLabels();
+
+    if (venueSelect && !venueSelect._listenerBound) {
+      venueSelect._listenerBound = true;
+      venueSelect.addEventListener("change", updateScoreLabels);
+    }
+    if (oppSelect && !oppSelect._listenerBound) {
+      oppSelect._listenerBound = true;
+      oppSelect.addEventListener("change", updateScoreLabels);
+    }
+
+    modal.classList.add("open");
+    const firstField = oppSelect || scoreHome;
+    if (firstField) firstField.focus();
+  }
+
+  async function saveCompleteMatch() {
+    const idInput = document.getElementById("edit-match-id");
+    const dateIntInput = document.getElementById("edit-match-date-int");
+    const dateInput = document.getElementById("edit-match-date");
+    const oppSelect = document.getElementById("edit-match-opponent");
+    const venueSelect = document.getElementById("edit-match-venue");
+    const scoreHome = document.getElementById("edit-score-home");
+    const scoreAway = document.getElementById("edit-score-away");
+    const compInput = document.getElementById("edit-match-competition");
+
+    if (!oppSelect || !oppSelect.value) {
+      showToast("Por favor, selecione o clube adversário.", "warning");
+      return;
+    }
+
+    const matchId = Number(idInput ? idInput.value : 0);
+    const dateInt = Number(dateIntInput ? dateIntInput.value : 0);
+    const oppId = Number(oppSelect.value);
+    const oppOption = oppSelect.selectedOptions && oppSelect.selectedOptions[0];
+    const oppName = oppOption ? (oppOption.getAttribute("data-name") || oppOption.textContent) : "Adversário";
+    const mando = venueSelect ? venueSelect.value : "Casa";
+    const homeScore = Number(scoreHome ? scoreHome.value : 0);
+    const awayScore = Number(scoreAway ? scoreAway.value : 0);
+    const comp = (compInput ? compInput.value : "") || "LaLiga Hypermotion";
+    const dateStr = (dateInput ? dateInput.value : "") || "";
+
+    const isHome = (mando === "Casa");
+    const clubName = (normalizedData.club && normalizedData.club.nome) || "FC Andorra";
+    const gp = isHome ? homeScore : awayScore;
+    const gc = isHome ? awayScore : homeScore;
+    const resultado = gp > gc ? "Vitória" : (gp === gc ? "Empate" : "Derrota");
+
+    const payload = {
+      match_id: matchId,
+      date_int: dateInt,
+      data: dateStr,
+      club_id: (normalizedData.club && normalizedData.club.id) || 114554,
+      club_name: clubName,
+      opp_id: oppId,
+      opp_name: oppName,
+      mando: mando,
+      placar_mandante: homeScore,
+      placar_visitante: awayScore,
+      competicao: comp,
+      tipo_competicao: comp.includes("Liga") ? "Liga Nacional" : "Pré-Temporada / Copa",
+      rodada: `Rodada ${matchId}`
+    };
+
+    // 1. Tentar salvar no servidor local Python (/api/match_update)
+    let savedOnServer = false;
+    const endpoints = localApiBase ? [`${localApiBase}/api/match_update`] : ["/api/match_update", "http://127.0.0.1:8080/api/match_update"];
+    for (const ep of endpoints) {
+      try {
+        const resp = await fetch(ep, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        if (resp.ok) {
+          const res = await resp.json();
+          if (res.career_data) {
+            rawData = res.career_data;
+            isLocalServer = true;
+            processAndRender();
+            savedOnServer = true;
+            showToast(`Placar contra o ${oppName} (${homeScore} x ${awayScore}) salvo e consolidado com sucesso no ledger!`, "success");
+            break;
+          }
+        }
+      } catch (e) {}
+    }
+
+    // 2. Se estiver no GitHub Pages ou offline: salvar no localStorage e atualizar a tela
+    if (!savedOnServer) {
+      try {
+        const overridesStr = localStorage.getItem("fc_match_overrides") || "{}";
+        const overrides = JSON.parse(overridesStr);
+        overrides[dateInt] = {
+          opp_id: oppId,
+          opp_name: oppName,
+          adversario: oppName,
+          mando: mando,
+          mandante: isHome ? clubName : oppName,
+          visitante: isHome ? oppName : clubName,
+          placar_mandante: homeScore,
+          placar_visitante: awayScore,
+          placar: `${homeScore} x ${awayScore}`,
+          gols_pro: gp,
+          gols_contra: gc,
+          resultado: resultado,
+          placar_origem: "manual"
+        };
+        localStorage.setItem("fc_match_overrides", JSON.stringify(overrides));
+
+        // Aplicar imediatamente nos dados ativos
+        if (rawData && Array.isArray(rawData.matches)) {
+          const target = rawData.matches.find(m => m.id === matchId || m.date_int === dateInt);
+          if (target) {
+            Object.assign(target, overrides[dateInt]);
+          }
+        }
+        processAndRender();
+        showToast(`Placar contra o ${oppName} salvo localmente! Você pode exportar o arquivo JSON atualizado.`, "success");
+      } catch (err) {
+        console.error("Erro ao salvar override:", err);
+        showToast("Erro ao salvar dados localmente.", "error");
+      }
+    }
+
+    const modal = document.getElementById("modal-complete-match");
+    if (modal) closeModal(modal);
   }
 
   // ==========================================================================
@@ -2139,6 +2469,11 @@ json.dumps(career_data)
             }
 
             rawData = parsed;
+            try {
+              localStorage.setItem("fc_custom_career_data", JSON.stringify(parsed));
+            } catch (e) {
+              console.warn("Não foi possível persistir no localStorage:", e);
+            }
             processAndRender();
             setText("current-save-name", fileName);
             showToast(`Save "${fileName}" analisado e carregado com sucesso!`, "success");
@@ -2204,7 +2539,7 @@ json.dumps(career_data)
       }
 
       // 3. Fallback informativo
-      showToast(`Não foi possível decodificar o save "${fileName}". Inicie o servidor executando "iniciar_tracker.bat" na pasta do FC Manager.`, "error");
+      showToast("Para processar arquivos binários brutos (CmMgr), inicie o servidor local (python src/app.py) ou importe o arquivo .json exportado.", "warning");
     }
   }
 
@@ -2212,6 +2547,8 @@ json.dumps(career_data)
   window.TrackerApp = {
     openPlayerModal,
     openMatchModal,
+    openCompleteMatchModal,
+    saveCompleteMatch,
     closeModal,
     showToast,
     getAppState: () => currentState,

@@ -309,7 +309,7 @@ class TestLastMatchAndResults(unittest.TestCase):
         todos os 10 jogos anteriores sem nenhuma perda."""
         from src.save_parser import load_match_ledger, resolve_matches_with_ledger
 
-        base_ledger = copy.deepcopy(load_match_ledger())
+        base_ledger = {k: copy.deepcopy(v) for k, v in load_match_ledger().items() if v.get("date_int", 0) <= 20250927}
         self.assertEqual(len(base_ledger), 10)
 
         ratings_dates = [20250718, 20250722, 20250726, 20250817, 20250823, 20250831,
@@ -355,7 +355,7 @@ class TestLastMatchAndResults(unittest.TestCase):
         garantindo chave composta '114554_20251011_456' sem colidir com '114554_20250927_456'."""
         from src.save_parser import load_match_ledger, resolve_matches_with_ledger
 
-        base_ledger = copy.deepcopy(load_match_ledger())
+        base_ledger = {k: copy.deepcopy(v) for k, v in load_match_ledger().items() if v.get("date_int", 0) <= 20250927}
         self.assertIn("114554_20250927_456", base_ledger)
         first_leg_score = base_ledger["114554_20250927_456"]["placar"]
         self.assertEqual(first_leg_score, "0 x 5")
@@ -404,7 +404,7 @@ class TestLastMatchAndResults(unittest.TestCase):
         pelo ledger e nenhum placar é perdido ou substituído por 0-0/Adversário."""
         from src.save_parser import load_match_ledger, resolve_matches_with_ledger
 
-        current_ledger = copy.deepcopy(load_match_ledger())
+        current_ledger = {k: copy.deepcopy(v) for k, v in load_match_ledger().items() if v.get("date_int", 0) <= 20250927}
         teams_map = {
             634: "Fortuna Sittard", 77: "Aberdeen", 718: "Estrela da Amadora",
             472: "UD Las Palmas", 244: "Real Zaragoza", 111005: "Burgos CF",

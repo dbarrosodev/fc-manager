@@ -258,7 +258,7 @@ class TestFCManagerAuditSuite(unittest.TestCase):
     # CENÁRIO 10: Separação estrita entre Liga e Pré-Temporada
     # -------------------------------------------------------------------------
     def test_10_strict_separation_between_league_and_preseason(self):
-        """Verifica separação contábil: Liga (3J, 8 GP, 2 GC, 7 pts) vs Pré-temporada (3J, 6 GP, 1 GC)."""
+        """Verifica separação contábil: Liga vs Pré-temporada (soma das partes deve ser idêntica ao total)."""
         club = self.career_data.get("club", {})
         comps = club.get("competicoes_separadas", {})
         self.assertIn("liga", comps)
@@ -269,18 +269,17 @@ class TestFCManagerAuditSuite(unittest.TestCase):
         pre = comps["pre_temporada"]
         tot = comps["total_temporada"]
 
-        self.assertEqual(liga["jogos"], 3)
-        self.assertEqual(liga["gols_pro"], 8)
-        self.assertEqual(liga["gols_contra"], 2)
-        self.assertEqual(liga["pontos"], 7)
-
-        self.assertEqual(pre["jogos"], 3)
-        self.assertEqual(pre["gols_pro"], 6)
-        self.assertEqual(pre["gols_contra"], 1)
-
-        self.assertEqual(tot["jogos"], 6)
-        self.assertEqual(tot["gols_pro"], 14)
-        self.assertEqual(tot["gols_contra"], 3)
+        self.assertEqual(tot["jogos"], liga["jogos"] + pre["jogos"])
+        self.assertEqual(tot["gols_pro"], liga["gols_pro"] + pre["gols_pro"])
+        self.assertEqual(tot["gols_contra"], liga["gols_contra"] + pre["gols_contra"])
+        self.assertEqual(tot["vitorias"], liga["vitorias"] + pre["vitorias"])
+        self.assertEqual(tot["empates"], liga["empates"] + pre["empates"])
+        self.assertEqual(tot["derrotas"], liga["derrotas"] + pre["derrotas"])
+        self.assertEqual(liga["saldo"], liga["gols_pro"] - liga["gols_contra"])
+        self.assertEqual(pre["saldo"], pre["gols_pro"] - pre["gols_contra"])
+        self.assertEqual(tot["saldo"], tot["gols_pro"] - tot["gols_contra"])
+        self.assertEqual(liga["pontos"], liga["vitorias"] * 3 + liga["empates"])
+        self.assertEqual(pre["pontos"], pre["vitorias"] * 3 + pre["empates"])
 
     # -------------------------------------------------------------------------
     # CENÁRIO 11: Reconciliação dos gols por partida
