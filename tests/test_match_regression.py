@@ -250,6 +250,494 @@ class TestLastMatchAndResults(unittest.TestCase):
         self.assertIsNone(re.search(r"\|\|\s*[1-9]\d*\}[JVED]", src),
                           "main.js usa números fictícios como fallback no placar da campanha")
 
+    def test_30_save_matches_deterministic_coupling_and_history_audit(self):
+        """Valida que o parser casa deterministicamente os registros do mham com o ledger,
+        elimina fallbacks 0-0 'Adversário', valida totais e audita contra career_managerhistory."""
+        import sys
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from src.save_parser import parse_save_file
+
+        save9_path = os.path.join(PROJECT_ROOT, "saves", "CmMgrC20261029111706028")
+        save10_path = r"C:\Users\Daniel\Downloads\save\saves\CmMgrC20261029172849669"
+
+        if os.path.exists(save9_path):
+            d9 = parse_save_file(save9_path)
+            m9 = d9["matches"]
+            self.assertEqual(len(m9), 9)
+            w9 = sum(1 for m in m9 if m["resultado"] == "Vitória")
+            d9_c = sum(1 for m in m9 if m["resultado"] == "Empate")
+            l9 = sum(1 for m in m9 if m["resultado"] == "Derrota")
+            gp9 = sum(m["gols_pro"] or 0 for m in m9)
+            gc9 = sum(m["gols_contra"] or 0 for m in m9)
+            self.assertEqual((w9, d9_c, l9, gp9, gc9), (6, 3, 0, 19, 5))
+            self.assertEqual(m9[8]["adversario"], "SD Eibar")
+            self.assertEqual(m9[8]["placar_origem"], "save")
+            self.assertEqual(d9.get("auditoria_historico", {}).get("status"), "OK")
+
+        if os.path.exists(save10_path):
+            d10 = parse_save_file(save10_path)
+            m10 = d10["matches"]
+            self.assertEqual(len(m10), 10)
+            w10 = sum(1 for m in m10 if m["resultado"] == "Vitória")
+            d10_c = sum(1 for m in m10 if m["resultado"] == "Empate")
+            l10 = sum(1 for m in m10 if m["resultado"] == "Derrota")
+            gp10 = sum(m["gols_pro"] or 0 for m in m10)
+            gc10 = sum(m["gols_contra"] or 0 for m in m10)
+            self.assertEqual((w10, d10_c, l10, gp10, gc10), (7, 3, 0, 24, 5))
+
+            # Match 9 (Eibar) mantido via ledger histórico
+            self.assertEqual(m10[8]["adversario"], "SD Eibar")
+            self.assertEqual(m10[8]["placar"], "0 x 1")
+            self.assertEqual(m10[8]["placar_origem"], "histórico anterior")
+
+            # Match 10 (Racing 0-5) em 27/09 com Cardona (4) e Molina (1)
+            self.assertEqual(m10[9]["data"], "27/09/2025")
+            self.assertEqual(m10[9]["adversario"], "Racing de Santander")
+            self.assertEqual(m10[9]["placar"], "0 x 5")
+            self.assertEqual(m10[9]["placar_origem"], "save")
+            self.assertIn("Marc Cardona (4)", m10[9]["artilheiros"])
+            self.assertIn("Sergio Molina (1)", m10[9]["artilheiros"])
+
+            # Nenhum 0-0 Adversário
+            self.assertFalse(any(m["adversario"] == "Adversário" for m in m10))
+            self.assertFalse(any(m["placar"] == "0 x 0" for m in m10))
+            self.assertEqual(d10.get("auditoria_historico", {}).get("status"), "OK")
+
+    def test_31_simulated_match_11_new_opponent(self):
+        """(a) Simula o 11º jogo contra adversário novo (Levante UD 1880 em 04/10/2025).
+        Verifica que o jogo é cadastrado no ledger sob a chave '114554_20251004_1880' e preserva
+        todos os 10 jogos anteriores sem nenhuma perda."""
+        from src.save_parser import load_match_ledger, resolve_matches_with_ledger
+
+        base_ledger = copy.deepcopy(load_match_ledger())
+        self.assertEqual(len(base_ledger), 10)
+
+        ratings_dates = [20250718, 20250722, 20250726, 20250817, 20250823, 20250831,
+                         20250907, 20250913, 20250921, 20250927, 20251004]
+
+        # mham rotativo contém os últimos 3 jogos (Levante 1880, Racing 456, Mirandés 110069)
+        # Córdoba 1867 e Eibar 467 já saíram do buffer mham!
+        mham_records = [
+            {"hid": 114554, "aid": 1880, "hsc": 3, "asc": 1, "opp_id": 1880, "is_home": True, "gp": 3, "gc": 1},
+            {"hid": 456, "aid": 114554, "hsc": 0, "asc": 5, "opp_id": 456, "is_home": False, "gp": 5, "gc": 0},
+            {"hid": 114554, "aid": 110069, "hsc": 2, "asc": 0, "opp_id": 110069, "is_home": True, "gp": 2, "gc": 0}
+        ]
+        teams_map = {1880: "Levante UD", 456: "Racing de Santander", 110069: "CD Mirandés", 114554: "FC Andorra"}
+
+        matches, updated_ledger, changed, conflitos = resolve_matches_with_ledger(
+            ratings_dates=ratings_dates,
+            mham_parsed_records=mham_records,
+            teams_map=teams_map,
+            full_ledger=base_ledger
+        )
+
+        self.assertEqual(len(matches), 11)
+        self.assertTrue(changed)
+        self.assertIn("114554_20251004_1880", updated_ledger)
+        self.assertEqual(updated_ledger["114554_20251004_1880"]["placar"], "3 x 1")
+        self.assertEqual(updated_ledger["114554_20251004_1880"]["opp_name"], "Levante UD")
+
+        # 11º jogo veio do save
+        m11 = matches[10]
+        self.assertEqual(m11["data"], "04/10/2025")
+        self.assertEqual(m11["adversario"], "Levante UD")
+        self.assertEqual(m11["placar"], "3 x 1")
+        self.assertEqual(m11["placar_origem"], "save")
+
+        # Jogos que já saíram do mham (ex.: Eibar 21/09 e Córdoba 13/09) mantidos via histórico
+        m_eibar = next(m for m in matches if m["date_int"] == 20250921)
+        self.assertEqual(m_eibar["adversario"], "SD Eibar")
+        self.assertEqual(m_eibar["placar"], "0 x 1")
+        self.assertEqual(m_eibar["placar_origem"], "histórico anterior")
+
+    def test_32_simulated_match_11_repeated_opponent(self):
+        """(b) Simula 11º jogo contra adversário repetido (Racing 456 em 11/10/2025),
+        garantindo chave composta '114554_20251011_456' sem colidir com '114554_20250927_456'."""
+        from src.save_parser import load_match_ledger, resolve_matches_with_ledger
+
+        base_ledger = copy.deepcopy(load_match_ledger())
+        self.assertIn("114554_20250927_456", base_ledger)
+        first_leg_score = base_ledger["114554_20250927_456"]["placar"]
+        self.assertEqual(first_leg_score, "0 x 5")
+
+        ratings_dates = [20250718, 20250722, 20250726, 20250817, 20250823, 20250831,
+                         20250907, 20250913, 20250921, 20250927, 20251011]
+
+        # Andorra recebe o Racing em casa pela Copa ou returno: placar 2 x 1
+        mham_records = [
+            {"hid": 114554, "aid": 456, "hsc": 2, "asc": 1, "opp_id": 456, "is_home": True, "gp": 2, "gc": 1},
+            {"hid": 456, "aid": 114554, "hsc": 0, "asc": 5, "opp_id": 456, "is_home": False, "gp": 5, "gc": 0},
+            {"hid": 114554, "aid": 110069, "hsc": 2, "asc": 0, "opp_id": 110069, "is_home": True, "gp": 2, "gc": 0}
+        ]
+        teams_map = {456: "Racing de Santander", 110069: "CD Mirandés", 114554: "FC Andorra"}
+
+        matches, updated_ledger, changed, conflitos = resolve_matches_with_ledger(
+            ratings_dates=ratings_dates,
+            mham_parsed_records=mham_records,
+            teams_map=teams_map,
+            full_ledger=base_ledger
+        )
+
+        self.assertEqual(len(matches), 11)
+        # Ambas as chaves coexistem sem colisão!
+        self.assertIn("114554_20250927_456", updated_ledger)
+        self.assertIn("114554_20251011_456", updated_ledger)
+
+        # 1º confronto inalterado (Racing 0 x 5 Andorra)
+        self.assertEqual(updated_ledger["114554_20250927_456"]["placar"], "0 x 5")
+        self.assertEqual(updated_ledger["114554_20250927_456"]["mando"], "Fora")
+
+        # 2º confronto registrado com sucesso (Andorra 2 x 1 Racing)
+        self.assertEqual(updated_ledger["114554_20251011_456"]["placar"], "2 x 1")
+        self.assertEqual(updated_ledger["114554_20251011_456"]["mando"], "Casa")
+
+        # Na lista de partidas
+        m10 = matches[9]
+        m11 = matches[10]
+        self.assertEqual(m10["placar"], "0 x 5")
+        self.assertEqual(m11["placar"], "2 x 1")
+
+    def test_33_sequence_saves_10_11_12_13_preservation(self):
+        """(c) Simula sequência contínua de 4 saves (10, 11, 12 e 13 jogos).
+        Comprova que com a rotação contínua do buffer mham da EA (tamanho 3),
+        partidas que saíram do buffer (Racing, Levante, etc.) são 100% preservadas
+        pelo ledger e nenhum placar é perdido ou substituído por 0-0/Adversário."""
+        from src.save_parser import load_match_ledger, resolve_matches_with_ledger
+
+        current_ledger = copy.deepcopy(load_match_ledger())
+        teams_map = {
+            634: "Fortuna Sittard", 77: "Aberdeen", 718: "Estrela da Amadora",
+            472: "UD Las Palmas", 244: "Real Zaragoza", 111005: "Burgos CF",
+            110069: "CD Mirandés", 1867: "Córdoba CF", 467: "SD Eibar",
+            456: "Racing de Santander", 1880: "Levante UD", 110839: "SD Huesca",
+            459: "Sporting Gijón", 114554: "FC Andorra"
+        }
+
+        # Save 11 (04/10/2025 vs Levante 3-1): mham = [Levante, Racing, Mirandés]
+        dates_11 = [20250718, 20250722, 20250726, 20250817, 20250823, 20250831,
+                    20250907, 20250913, 20250921, 20250927, 20251004]
+        mham_11 = [
+            {"hid": 114554, "aid": 1880, "hsc": 3, "asc": 1, "opp_id": 1880, "is_home": True, "gp": 3, "gc": 1},
+            {"hid": 456, "aid": 114554, "hsc": 0, "asc": 5, "opp_id": 456, "is_home": False, "gp": 5, "gc": 0},
+            {"hid": 114554, "aid": 110069, "hsc": 2, "asc": 0, "opp_id": 110069, "is_home": True, "gp": 2, "gc": 0}
+        ]
+        m11_list, current_ledger, _, _ = resolve_matches_with_ledger(
+            dates_11, mham_11, teams_map, full_ledger=current_ledger
+        )
+        self.assertEqual(len(m11_list), 11)
+        self.assertIn("114554_20251004_1880", current_ledger)
+
+        # Save 12 (11/10/2025 vs Huesca 1-0): mham = [Huesca, Levante, Racing] -> Mirandés sai do buffer
+        dates_12 = dates_11 + [20251011]
+        mham_12 = [
+            {"hid": 110839, "aid": 114554, "hsc": 0, "asc": 1, "opp_id": 110839, "is_home": False, "gp": 1, "gc": 0},
+            {"hid": 114554, "aid": 1880, "hsc": 3, "asc": 1, "opp_id": 1880, "is_home": True, "gp": 3, "gc": 1},
+            {"hid": 456, "aid": 114554, "hsc": 0, "asc": 5, "opp_id": 456, "is_home": False, "gp": 5, "gc": 0}
+        ]
+        m12_list, current_ledger, _, _ = resolve_matches_with_ledger(
+            dates_12, mham_12, teams_map, full_ledger=current_ledger
+        )
+        self.assertEqual(len(m12_list), 12)
+        self.assertIn("114554_20251011_110839", current_ledger)
+        # Mirandés (07/09) saiu do buffer mham, mas foi preservado perfeitamente!
+        m_mir = next(m for m in m12_list if m["date_int"] == 20250907)
+        self.assertEqual(m_mir["adversario"], "CD Mirandés")
+        self.assertEqual(m_mir["placar"], "2 x 0")
+        self.assertEqual(m_mir["placar_origem"], "histórico anterior")
+
+        # Save 13 (18/10/2025 vs Sporting 2-0): mham = [Sporting, Huesca, Levante] -> Racing sai do buffer
+        dates_13 = dates_12 + [20251018]
+        mham_13 = [
+            {"hid": 114554, "aid": 459, "hsc": 2, "asc": 0, "opp_id": 459, "is_home": True, "gp": 2, "gc": 0},
+            {"hid": 110839, "aid": 114554, "hsc": 0, "asc": 1, "opp_id": 110839, "is_home": False, "gp": 1, "gc": 0},
+            {"hid": 114554, "aid": 1880, "hsc": 3, "asc": 1, "opp_id": 1880, "is_home": True, "gp": 3, "gc": 1}
+        ]
+        m13_list, current_ledger, _, _ = resolve_matches_with_ledger(
+            dates_13, mham_13, teams_map, full_ledger=current_ledger
+        )
+        self.assertEqual(len(m13_list), 13)
+        self.assertEqual(len(current_ledger), 13)
+
+        # Racing (27/09) saiu do mham, mas placar 0 x 5 está 100% preservado!
+        m_rac = next(m for m in m13_list if m["date_int"] == 20250927)
+        self.assertEqual(m_rac["adversario"], "Racing de Santander")
+        self.assertEqual(m_rac["placar"], "0 x 5")
+        self.assertEqual(m_rac["placar_origem"], "histórico anterior")
+
+        # NENHUM 'Adversário', NENHUM '0 x 0' em nenhuma das 13 partidas
+        self.assertFalse(any(m["adversario"] == "Adversário" for m in m13_list))
+        self.assertFalse(any(m["placar"] == "0 x 0" for m in m13_list))
+
+    def test_34_unavailable_match_without_mham_or_ledger(self):
+        """(d) Jogo sem registro no mham nem no ledger deve aparecer explicitamente
+        como 'indisponível', sem criar placar fictício 0-0 e sem 'Adversário'."""
+        from src.save_parser import resolve_matches_with_ledger
+
+        empty_ledger = {}
+        empty_mham = []
+        dates = [20251025]
+        teams_map = {114554: "FC Andorra"}
+
+        matches, _, _, _ = resolve_matches_with_ledger(
+            ratings_dates=dates,
+            mham_parsed_records=empty_mham,
+            teams_map=teams_map,
+            full_ledger=empty_ledger
+        )
+
+        self.assertEqual(len(matches), 1)
+        m = matches[0]
+        self.assertEqual(m["placar_origem"], "indisponível")
+        self.assertEqual(m["placar"], "Indisponível")
+        self.assertIsNone(m["placar_mandante"])
+        self.assertIsNone(m["placar_visitante"])
+        self.assertEqual(m["adversario"], "Dados indisponíveis")
+        self.assertEqual(m["resultado"], "Indisponível")
+        self.assertNotEqual(m["adversario"], "Adversário")
+        self.assertNotEqual(m["placar"], "0 x 0")
+        self.assertNotEqual(m["placar"], "0-0")
+
+    def test_35_ambiguous_tie_never_chosen_and_reported(self):
+        """Item 2: Empate de pontuação entre candidatos: nunca escolher.
+        Dois candidatos com mesma assinatura (ambos 2-0 Casa com clean sheet) devem ser
+        rejeitados por ambiguidade, marcados como indisponível e reportados em conflitos_ledger."""
+        from src.save_parser import resolve_matches_with_ledger
+
+        dates = [20251025]
+        mham_records = [
+            {"hid": 114554, "aid": 1880, "hsc": 2, "asc": 0, "opp_id": 1880, "is_home": True, "gp": 2, "gc": 0},
+            {"hid": 114554, "aid": 459, "hsc": 2, "asc": 0, "opp_id": 459, "is_home": True, "gp": 2, "gc": 0}
+        ]
+        teams_map = {1880: "Levante UD", 459: "Sporting Gijón", 114554: "FC Andorra"}
+        known_goals = {20251025: 2}
+
+        matches, updated_ledger, changed, conflitos = resolve_matches_with_ledger(
+            ratings_dates=dates,
+            mham_parsed_records=mham_records,
+            teams_map=teams_map,
+            known_match_goals=known_goals,
+            full_ledger={}
+        )
+
+        self.assertEqual(len(matches), 1)
+        m = matches[0]
+        self.assertEqual(m["placar_origem"], "ambíguo")
+        self.assertEqual(m["placar"], "Indisponível")
+        self.assertIsNone(m["placar_mandante"])
+        self.assertIsNone(m["placar_visitante"])
+        self.assertTrue(any(c.get("tipo") == "ambiguidade" for c in conflitos))
+        self.assertEqual(len(updated_ledger), 0)
+
+    def test_36_unverified_ledger_entry_never_self_reinforces(self):
+        """Item 3: O bônus de 'placar consolidado prévio' só vale para entradas do ledger
+        com placar_origem = 'save'. Entradas do ledger nunca podem reforçar a si mesmas.
+        Prova que entrada com placar_origem = 'histórico anterior' NÃO concede bônus de 50 pts."""
+        from src.save_parser import resolve_matches_with_ledger
+
+        test_ledger = {
+            "114554_20251004_1880": {
+                "date_int": 20251004,
+                "data": "04/10/2025",
+                "club_id": 114554,
+                "opp_id": 1880,
+                "opp_name": "Levante UD",
+                "mando": "Casa",
+                "mandante": "FC Andorra",
+                "visitante": "Levante UD",
+                "placar_mandante": 1,
+                "placar_visitante": 0,
+                "placar": "1 x 0",
+                "placar_origem": "histórico anterior"
+            }
+        }
+
+        # No save, placar real foi 3 x 1
+        mham_records = [
+            {"hid": 114554, "aid": 1880, "hsc": 3, "asc": 1, "opp_id": 1880, "is_home": True, "gp": 3, "gc": 1}
+        ]
+        teams_map = {1880: "Levante UD", 114554: "FC Andorra"}
+        known_goals = {20251004: 3}
+
+        matches, updated_ledger, changed, conflitos = resolve_matches_with_ledger(
+            ratings_dates=[20251004],
+            mham_parsed_records=mham_records,
+            teams_map=teams_map,
+            known_match_goals=known_goals,
+            full_ledger=test_ledger
+        )
+
+        self.assertEqual(len(matches), 1)
+        m = matches[0]
+        self.assertEqual(m["placar"], "3 x 1")
+        self.assertEqual(m["placar_origem"], "save")
+        self.assertEqual(updated_ledger["114554_20251004_1880"]["placar"], "3 x 1")
+        self.assertEqual(updated_ledger["114554_20251004_1880"]["placar_origem"], "save")
+        self.assertTrue(len(conflitos) > 0)
+
+    def test_37_empty_ledger_resolves_recent_mham_and_marks_evicted_unavailable(self):
+        """Item 1: Executa o parser do save real de 10 jogos com match_ledger.json VAZIO ({}).
+        Comprova que:
+          - 07/09 Mirandés 2-0 (Casa, save)
+          - 13/09 Córdoba 2-2 (Casa, save)
+          - 27/09 Racing 0-5 (visitante, save)
+          são resolvidos exclusivamente por gols marcados, goleiro (clean sheet/gols sofridos) e mando.
+          - 21/09 (Eibar) é marcado como 'indisponível' (pois saiu do buffer rotativo mham).
+          - Jogos 1 a 6 (18/07 a 31/08) são marcados como 'indisponível' (fora da capacidade do mham)."""
+        import tempfile
+        from src.save_parser import parse_save_file
+
+        save10_path = r"C:\Users\Daniel\Downloads\save\saves\CmMgrC20261029172849669"
+        if not os.path.exists(save10_path):
+            self.skipTest(f"Save de 10 jogos não encontrado em {save10_path}")
+
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as tf:
+            tf.write("{}")
+            tmp_empty_ledger = tf.name
+
+        try:
+            res = parse_save_file(save10_path, ledger_path=tmp_empty_ledger)
+            matches = res["matches"]
+            self.assertEqual(len(matches), 10)
+
+            # Mapeamento por date_int
+            m_by_date = {m["date_int"]: m for m in matches}
+
+            # 1. Jogos 1 a 6 (18/07 a 31/08): Fora da janela física do mham -> indisponíveis
+            for d in [20250718, 20250722, 20250726, 20250817, 20250823, 20250831]:
+                m = m_by_date[d]
+                self.assertEqual(m["placar_origem"], "indisponível", f"Data {d} deveria ser indisponível sem ledger")
+                self.assertEqual(m["placar"], "Indisponível")
+                self.assertEqual(m["adversario"], "Dados indisponíveis")
+
+            # 2. Match 7 (07/09/2025 vs CD Mirandés): GP=2, Clean Sheet Owono (8.0), Mando Casa -> 2 x 0
+            m_mirandes = m_by_date[20250907]
+            self.assertEqual(m_mirandes["placar_origem"], "save")
+            self.assertEqual(m_mirandes["adversario"], "CD Mirandés")
+            self.assertEqual(m_mirandes["placar"], "2 x 0")
+            self.assertEqual(m_mirandes["mando"], "Casa")
+
+            # 3. Match 8 (13/09/2025 vs Córdoba CF): GP=2, Yaakobishvili GC=2 (6.0), Mando Casa -> 2 x 2
+            m_cordoba = m_by_date[20250913]
+            self.assertEqual(m_cordoba["placar_origem"], "save")
+            self.assertEqual(m_cordoba["adversario"], "Córdoba CF")
+            self.assertEqual(m_cordoba["placar"], "2 x 2")
+            self.assertEqual(m_cordoba["mando"], "Casa")
+
+            # 4. Match 9 (21/09/2025 vs SD Eibar): Rotacionou fora do buffer mham -> Indisponível
+            m_eibar = m_by_date[20250921]
+            self.assertEqual(m_eibar["placar_origem"], "indisponível")
+            self.assertEqual(m_eibar["placar"], "Indisponível")
+            self.assertEqual(m_eibar["adversario"], "Dados indisponíveis")
+
+            # 5. Match 10 (27/09/2025 vs Racing de Santander): GP=5, Clean Sheet Yaakobishvili (8.0), Fora -> 0 x 5
+            m_racing = m_by_date[20250927]
+            self.assertEqual(m_racing["placar_origem"], "save")
+            self.assertEqual(m_racing["adversario"], "Racing de Santander")
+            self.assertEqual(m_racing["placar"], "0 x 5")
+            self.assertEqual(m_racing["mando"], "Fora")
+            self.assertEqual(m_racing["mandante"], "Racing de Santander")
+            self.assertEqual(m_racing["visitante"], "FC Andorra")
+
+        finally:
+            if os.path.exists(tmp_empty_ledger):
+                os.remove(tmp_empty_ledger)
+
+    def test_38_mham_record_used_once_cannot_be_reused_by_new_match(self):
+        """Item 2: Garante que cada registro do buffer mham só pode ser atribuído a UMA data.
+        Cenário: 11º jogo em 04/10/2025 onde o mham traz [novo (Levante), Racing, Mirandés].
+        Racing e Mirandés já estão no ledger com datas 27/09 e 07/09.
+        Comprova que:
+          - Racing e Mirandés são ancorados exclusivamente às suas respectivas datas originais.
+          - O 11º jogo casa exclusivamente com o registro novo (Levante) e NUNCA reaproveita
+            Racing ou Mirandés para a nova data.
+          - Se o registro novo não existisse no mham, a data 04/10 ficaria como 'indisponível',
+            provando a impossibilidade física de reutilização."""
+        from src.save_parser import resolve_matches_with_ledger
+
+        # Ledger existente contendo 07/09 (Mirandés) e 27/09 (Racing)
+        test_ledger = {
+            "114554_20250907_110069": {
+                "date_int": 20250907,
+                "data": "07/09/2025",
+                "club_id": 114554,
+                "opp_id": 110069,
+                "opp_name": "CD Mirandés",
+                "mando": "Casa",
+                "mandante": "FC Andorra",
+                "visitante": "CD Mirandés",
+                "placar_mandante": 2,
+                "placar_visitante": 0,
+                "placar": "2 x 0",
+                "placar_origem": "save"
+            },
+            "114554_20250927_456": {
+                "date_int": 20250927,
+                "data": "27/09/2025",
+                "club_id": 114554,
+                "opp_id": 456,
+                "opp_name": "Racing de Santander",
+                "mando": "Fora",
+                "mandante": "Racing de Santander",
+                "visitante": "FC Andorra",
+                "placar_mandante": 0,
+                "placar_visitante": 5,
+                "placar": "0 x 5",
+                "placar_origem": "save"
+            }
+        }
+
+        # Buffer mham do 11º jogo contendo [Novo (Levante), Racing, Mirandés]
+        # Nota: Mirandés tem GP=2 e Clean Sheet (2-0). Suponha que o jogo 11 também tivesse 2 gols.
+        mham_records = [
+            {"hid": 114554, "aid": 1880, "hsc": 2, "asc": 1, "opp_id": 1880, "is_home": True, "gp": 2, "gc": 1},
+            {"hid": 456, "aid": 114554, "hsc": 0, "asc": 5, "opp_id": 456, "is_home": False, "gp": 5, "gc": 0},
+            {"hid": 114554, "aid": 110069, "hsc": 2, "asc": 0, "opp_id": 110069, "is_home": True, "gp": 2, "gc": 0}
+        ]
+        teams_map = {1880: "Levante UD", 456: "Racing de Santander", 110069: "CD Mirandés", 114554: "FC Andorra"}
+        known_goals = {20250907: 2, 20250927: 5, 20251004: 2}
+
+        ratings_dates = [20250907, 20250927, 20251004]
+
+        matches, updated_ledger, changed, conflitos = resolve_matches_with_ledger(
+            ratings_dates=ratings_dates,
+            mham_parsed_records=mham_records,
+            teams_map=teams_map,
+            known_match_goals=known_goals,
+            full_ledger=copy.deepcopy(test_ledger)
+        )
+
+        m_by_d = {m["date_int"]: m for m in matches}
+
+        # 07/09 consumiu o registro de Mirandés (índice 2)
+        self.assertEqual(m_by_d[20250907]["adversario"], "CD Mirandés")
+        self.assertEqual(m_by_d[20250907]["placar"], "2 x 0")
+
+        # 27/09 consumiu o registro de Racing (índice 1)
+        self.assertEqual(m_by_d[20250927]["adversario"], "Racing de Santander")
+        self.assertEqual(m_by_d[20250927]["placar"], "0 x 5")
+
+        # 04/10 consumiu EXCLUSIVAMENTE o registro do Levante (índice 0)
+        self.assertEqual(m_by_d[20251004]["adversario"], "Levante UD")
+        self.assertEqual(m_by_d[20251004]["placar"], "2 x 1")
+        self.assertEqual(m_by_d[20251004]["placar_origem"], "save")
+
+        # Prova de não-reaproveitamento: se mham não trouxesse Levante (só Racing e Mirandés repetidos)
+        mham_sem_novo = [
+            {"hid": 456, "aid": 114554, "hsc": 0, "asc": 5, "opp_id": 456, "is_home": False, "gp": 5, "gc": 0},
+            {"hid": 114554, "aid": 110069, "hsc": 2, "asc": 0, "opp_id": 110069, "is_home": True, "gp": 2, "gc": 0}
+        ]
+        matches2, _, _, _ = resolve_matches_with_ledger(
+            ratings_dates=ratings_dates,
+            mham_parsed_records=mham_sem_novo,
+            teams_map=teams_map,
+            known_match_goals=known_goals,
+            full_ledger=copy.deepcopy(test_ledger)
+        )
+        m2_by_d = {m["date_int"]: m for m in matches2}
+        # Racing e Mirandés não podem ser reutilizados para 04/10, logo 04/10 fica indisponível
+        self.assertEqual(m2_by_d[20251004]["placar_origem"], "indisponível")
+        self.assertEqual(m2_by_d[20251004]["placar"], "Indisponível")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

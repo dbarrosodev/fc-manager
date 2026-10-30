@@ -975,10 +975,14 @@
         </div>
       ` : "";
 
+      const origemBadge = m.placar_origem === 'histórico anterior' 
+        ? ' <span style="font-size:10.5px; color:var(--text-muted);" title="Placar recuperado do histórico anterior consolidado (partida rotacionada do buffer recente da EA)">· Histórico</span>'
+        : (m.placar_origem === 'indisponível' ? ' <span style="font-size:10.5px; color:var(--sports-loss);">· Placar Indisponível</span>' : '');
+
       return `
         <div class="match-card" tabindex="0" role="button" aria-label="Ver ficha da partida ${Domain.escapeHtml(m.mandante)} contra ${Domain.escapeHtml(m.visitante)}" onclick="window.TrackerApp.openMatchModal(${m.id})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); window.TrackerApp.openMatchModal(${m.id});}">
           <div class="match-card-top match-card-header">
-            <span class="match-card-comp-date">${Domain.escapeHtml(m.competicao)} · ${Domain.escapeHtml(m.data)}</span>
+            <span class="match-card-comp-date">${Domain.escapeHtml(m.competicao)} · ${Domain.escapeHtml(m.data)}${origemBadge}</span>
             <span class="badge badge-result ${resClass} result-badge">${Domain.escapeHtml(m.resultado)}</span>
           </div>
           <div class="match-card-teams match-teams-row">
@@ -1470,6 +1474,7 @@
         <div class="detail-row"><span class="detail-label">Competição</span><span class="detail-val">${Domain.escapeHtml(match.competicao)}</span></div>
         <div class="detail-row"><span class="detail-label">Data</span><span class="detail-val">${Domain.escapeHtml(match.data)}</span></div>
         <div class="detail-row"><span class="detail-label">Placar Oficial</span><span class="detail-val" style="font-size:18px; color:var(--brand-cyan);">${Domain.escapeHtml(match.placar)}</span></div>
+        <div class="detail-row"><span class="detail-label">Origem do Placar</span><span class="detail-val" style="font-size:12px; color:var(--text-muted);">${match.placar_origem === 'save' ? 'Save Atual (Buffer Recente EA)' : (match.placar_origem === 'histórico anterior' ? 'Histórico Anterior Consolidado' : 'Dados Indisponíveis no Save')}</span></div>
         <div class="detail-row"><span class="detail-label">Artilheiros</span><span class="detail-val" style="color:var(--sports-win);">${Domain.escapeHtml(match.artilheiros || "Nenhum")}</span></div>
         <div class="detail-row"><span class="detail-label">Goleiro</span><span class="detail-val">${Domain.escapeHtml(match.goleiro || "-")}</span></div>
         ${motmHighlight}

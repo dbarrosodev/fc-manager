@@ -550,7 +550,453 @@ def build_dynamic_player_analysis(p):
     return resumo_analitico, rec, motivo, confianca
 
 
-def parse_save_file(save_path):
+MATCH_LEDGER_PATH = os.path.join(DATA_DIR, "match_ledger.json")
+
+
+def load_match_ledger(ledger_path=None):
+    """
+    Carrega o ledger histórico de partidas (assets/data/match_ledger.json).
+    A chave primária oficial é SEMPRE '{club_id}_{date_int}_{opp_id}', garantindo
+    isolamento por clube/carreira e evitando colisões entre 1º e 2º turnos.
+    Migra automaticamente chaves legadas de 2 partes ('{date_int}_{opp_id}').
+    """
+    path = ledger_path or MATCH_LEDGER_PATH
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                raw_data = json.load(f)
+            migrated = {}
+            needs_save = False
+            for k, v in raw_data.items():
+                cid = v.get("club_id", 114554)
+                v["club_id"] = cid
+                parts = k.split("_")
+                if len(parts) == 2:
+                    new_k = f"{cid}_{parts[0]}_{parts[1]}"
+                    migrated[new_k] = v
+                    needs_save = True
+                else:
+                    migrated[k] = v
+            if needs_save:
+                save_match_ledger(migrated, path)
+            return migrated
+        except Exception:
+            return {}
+    return {}
+
+
+def save_match_ledger(ledger_data, ledger_path=None):
+    """Persiste o ledger consolidado de partidas de volta no arquivo de dados."""
+    path = ledger_path or MATCH_LEDGER_PATH
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(ledger_data, f, ensure_ascii=False, indent=2)
+
+
+def get_historical_fixtures_by_club(ledger_path=None):
+    """
+    Constrói um dicionário indexado por [club_id][date_int] a partir do ledger
+    persistente para manter total retrocompatibilidade com código legado.
+    """
+    ledger = load_match_ledger(ledger_path)
+    by_club = defaultdict(dict)
+    for k, v in ledger.items():
+        cid = v.get("club_id", 114554)
+        d = v.get("date_int")
+        if d:
+            by_club[cid][int(d)] = v
+    return by_club
+
+
+class _HistoricalFixturesProxy(dict):
+    """Proxy dinâmico para HISTORICAL_FIXTURES_BY_CLUB lendo do arquivo match_ledger.json."""
+    def get(self, key, default=None):
+        return get_historical_fixtures_by_club().get(key, default)
+    def __getitem__(self, key):
+        return get_historical_fixtures_by_club()[key]
+    def __contains__(self, key):
+        return key in get_historical_fixtures_by_club()
+    def items(self):
+        return get_historical_fixtures_by_club().items()
+    def values(self):
+        return get_historical_fixtures_by_club().values()
+    def keys(self):
+        return get_historical_fixtures_by_club().keys()
+
+
+HISTORICAL_FIXTURES_BY_CLUB = _HistoricalFixturesProxy()
+
+
+def resolve_matches_with_ledger(
+    ratings_dates,
+    mham_parsed_records,
+    teams_map,
+    club_id=114554,
+    club_name="FC Andorra",
+    club_league_name="LaLiga Hypermotion",
+    date_to_comp_slot=None,
+    club_comp_stats=None,
+    known_match_goals=None,
+    full_ledger=None,
+    conflitos_ledger=None,
+    date_gk_info=None,
+    date_to_mando=None
+):
+    """
+    Unifica deterministicamente os metadados de partidas (cabeça: placar/adversário)
+    com as métricas de escalação/ratings (corpo).
+
+    Resolução em Duas Etapas (Two-Pass Resolution):
+      Pass 1 (Anchor Pass): Para datas já mapeadas no ledger (com opp_id conhecido),
+             localiza o candidato correspondente no buffer mham da EA (rec['opp_id'] == opp_id).
+             O registro correspondente é reservado em used_mham_indices e NUNCA pode ser
+             reutilizado por outra data.
+      Pass 2 (Discovery Pass): Para datas novas ou quando o ledger está vazio, avalia os
+             registros restantes do buffer mham dentro da janela de recência física do buffer
+             (no máximo as últimas len(mham)+1 partidas). Valida gols marcados (gp),
+             gols sofridos (gc) via clean sheet do goleiro e mando de campo. Registros já
+             consumidos no Pass 1 ou com opp_id já vinculado a outra data no ledger são
+             estritamente inelegíveis.
+      Ambiguidade: Em caso de empate de pontuação no Pass 2, nenhum registro é escolhido,
+             a partida é marcada como ambígua/indisponível e o conflito é reportado.
+      Fallback: Sem correspondência válida no mham nem no ledger, a partida é marcada
+             explicitamente como 'indisponível' (nunca 0-0 e nunca 'Adversário').
+    """
+    if full_ledger is None:
+        full_ledger = {}
+    if conflitos_ledger is None:
+        conflitos_ledger = []
+    if date_to_comp_slot is None:
+        date_to_comp_slot = {}
+    if club_comp_stats is None:
+        club_comp_stats = {}
+    if known_match_goals is None:
+        known_match_goals = {}
+    if date_gk_info is None:
+        date_gk_info = {}
+    if date_to_mando is None:
+        date_to_mando = {}
+
+    ledger_updated = False
+
+    # Indexar ledger existente por date_int
+    ledger_by_date = {}
+    for k, v in full_ledger.items():
+        cid = v.get("club_id", 114554)
+        if club_id is not None and cid != club_id:
+            continue
+        d_val = v.get("date_int")
+        if d_val:
+            ledger_by_date[int(d_val)] = (k, v)
+
+    used_mham_indices = set()
+    mham_assigned = {}  # d_int -> (idx_rec, rec)
+    ambiguous_dates = set()
+
+    def get_expected_gp(d_int):
+        kmg = 0
+        found_kmg = False
+        for k, g in known_match_goals.items():
+            if isinstance(k, tuple) and len(k) >= 1:
+                if k[0] == d_int:
+                    kmg += g
+                    found_kmg = True
+            elif k == d_int:
+                kmg += g
+                found_kmg = True
+        if found_kmg and kmg > 0:
+            return kmg
+
+        if d_int in date_to_comp_slot:
+            target_cid, target_slot = date_to_comp_slot[d_int]
+            calc_gp = 0
+            found_slot = False
+            for p_stats in club_comp_stats.values():
+                for entry in p_stats:
+                    if entry.get("compobjid") == target_cid:
+                        for s in entry.get("slots_detail", []):
+                            if s.get("slot_idx") == target_slot and s.get("mins", 0) > 0:
+                                calc_gp += s.get("goals", 0)
+                                found_slot = True
+            if found_slot:
+                return calc_gp
+        return None
+
+    # -------------------------------------------------------------------------
+    # PASS 1: Anchor Pass (Casamento determinístico de datas com opp_id no ledger)
+    # -------------------------------------------------------------------------
+    for d_int in sorted(ratings_dates):
+        ledger_pair = ledger_by_date.get(d_int)
+        ledger_entry = ledger_pair[1] if ledger_pair else None
+        opp_id = ledger_entry.get("opp_id") if ledger_entry else None
+        if opp_id is None:
+            continue
+
+        cands = []
+        for idx_rec, rec in enumerate(mham_parsed_records):
+            if idx_rec in used_mham_indices:
+                continue
+            if rec["opp_id"] != opp_id:
+                continue
+            cand_score = 100
+            if ledger_entry:
+                if ledger_entry.get("placar_origem") == "save":
+                    exp_pm = ledger_entry.get("placar_mandante")
+                    exp_pv = ledger_entry.get("placar_visitante")
+                    if exp_pm is not None and exp_pv is not None:
+                        if (rec["hsc"], rec["asc"]) == (exp_pm, exp_pv):
+                            cand_score += 50
+                exp_mando = ledger_entry.get("mando")
+                if exp_mando:
+                    if (exp_mando == "Casa" and rec["is_home"]) or (exp_mando == "Fora" and not rec["is_home"]):
+                        cand_score += 10
+            cands.append((idx_rec, rec, cand_score))
+
+        if cands:
+            max_s = max(s for _, _, s in cands)
+            top = [c for c in cands if c[2] == max_s]
+            if len(top) == 1:
+                idx_w, rec_w, _ = top[0]
+                used_mham_indices.add(idx_w)
+                mham_assigned[d_int] = (idx_w, rec_w)
+            else:
+                d_str = f"{str(d_int)[6:8]}/{str(d_int)[4:6]}/{str(d_int)[0:4]}"
+                cands_str = ", ".join(f"[{r.get('opp_name', r['opp_id'])} {r['hsc']}x{r['asc']} ({s}pts)]" for _, r, s in top)
+                conflitos_ledger.append({
+                    "data": d_str,
+                    "tipo": "ambiguidade",
+                    "conflito": f"Empate de pontuação ({max_s} pts) entre {len(top)} candidatos no Pass 1 para a data {d_str}: {cands_str}."
+                })
+                ambiguous_dates.add(d_int)
+
+    # -------------------------------------------------------------------------
+    # PASS 2: Discovery Pass (Novas datas ou ledger vazio)
+    # -------------------------------------------------------------------------
+    mham_len = len(mham_parsed_records)
+    recent_dates_window = set(sorted(ratings_dates)[-max(4, mham_len + 1):]) if ratings_dates else set()
+
+    unresolved_dates = [
+        d for d in sorted(ratings_dates)
+        if d not in mham_assigned and (d not in ledger_by_date or ledger_by_date[d][1].get("opp_id") is None)
+    ]
+
+    for d_int in sorted([d for d in unresolved_dates if d in recent_dates_window], reverse=True):
+        if d_int in ambiguous_dates:
+            continue
+        d_str = f"{str(d_int)[6:8]}/{str(d_int)[4:6]}/{str(d_int)[0:4]}"
+        expected_gp = get_expected_gp(d_int)
+        gk_info = date_gk_info.get(d_int)
+        mando_info = date_to_mando.get(d_int)
+
+        evaluated_cands = []
+        for idx_rec, rec in enumerate(mham_parsed_records):
+            if idx_rec in used_mham_indices:
+                continue
+
+            cand_score = 0
+            # 1. Gols marcados (GP)
+            if expected_gp is not None:
+                if rec["gp"] != expected_gp:
+                    continue  # Mismatch de GP desclassifica imediatamente o candidato
+                cand_score += 40
+            else:
+                cand_score += 10
+
+            # 2. Gols sofridos / Clean sheet do goleiro
+            if gk_info is not None:
+                gk_cs = gk_info.get("clean_sheet")
+                if gk_cs is True:
+                    if rec["gc"] == 0:
+                        cand_score += 20
+                    else:
+                        continue  # Goleiro com clean sheet não pode ter sofrido gols
+                elif gk_cs is False:
+                    if rec["gc"] > 0:
+                        cand_score += 20
+                    else:
+                        cand_score -= 10
+
+            # 3. Mando de campo (se disponível)
+            if mando_info:
+                if (mando_info == "Casa" and rec["is_home"]) or (mando_info == "Fora" and not rec["is_home"]):
+                    cand_score += 10
+                else:
+                    cand_score -= 10
+
+            evaluated_cands.append((idx_rec, rec, cand_score))
+
+        eligible = [(i, r, s) for i, r, s in evaluated_cands if s >= 10]
+        if eligible:
+            max_score = max(s for _, _, s in eligible)
+            top_cands = [(i, r, s) for i, r, s in eligible if s == max_score]
+            if len(top_cands) == 1:
+                idx_w, rec_w, _ = top_cands[0]
+                used_mham_indices.add(idx_w)
+                mham_assigned[d_int] = (idx_w, rec_w)
+            else:
+                # Empate: ambiguidade! NUNCA escolher
+                cands_str = ", ".join(f"[{r.get('opp_name', r['opp_id'])} {r['hsc']}x{r['asc']} ({s}pts)]" for _, r, s in top_cands)
+                conflitos_ledger.append({
+                    "data": d_str,
+                    "tipo": "ambiguidade",
+                    "conflito": f"Empate de pontuação ({max_score} pts) entre {len(top_cands)} candidatos para a data {d_str}: {cands_str}. Placar marcado como indisponível/ambíguo."
+                })
+                ambiguous_dates.add(d_int)
+
+    # -------------------------------------------------------------------------
+    # MONTAGEM FINAL DO CATÁLOGO DE PARTIDAS
+    # -------------------------------------------------------------------------
+    matches_catalog = []
+    round_counter = 1
+
+    for d_int in sorted(ratings_dates):
+        d_str = f"{str(d_int)[6:8]}/{str(d_int)[4:6]}/{str(d_int)[0:4]}"
+        ledger_pair = ledger_by_date.get(d_int)
+        ledger_entry = ledger_pair[1] if ledger_pair else None
+
+        # Prioridade 0: Ambiguidade não resolvida
+        if d_int in ambiguous_dates:
+            hname = club_name
+            aname = "Conflito de dados (ambíguo)"
+            hsc = None
+            asc = None
+            is_home = True
+            opp_name = "Conflito de dados (ambíguo)"
+            gp = None
+            gc = None
+            res_str = "Indisponível"
+            origem = "ambíguo"
+            comp_nome = normalize_competition_name(club_league_name)
+            tipo_comp = "Liga Nacional"
+            rodada_str = f"Rodada {round_counter}"
+            resumo_str = f"Partida disputada em {d_str} (conflito por ambiguidade entre múltiplos registros do buffer)."
+
+        # Prioridade 1: Leitura direta do buffer mham do save atual
+        elif d_int in mham_assigned:
+            mham_idx, mham_match = mham_assigned[d_int]
+            hid = mham_match["hid"]
+            aid = mham_match["aid"]
+            hsc = mham_match["hsc"]
+            asc = mham_match["asc"]
+            opp_id = mham_match["opp_id"]
+            is_home = mham_match["is_home"]
+            gp = mham_match["gp"]
+            gc = mham_match["gc"]
+            hname = club_name if is_home else teams_map.get(opp_id, f"Clube {opp_id}")
+            aname = teams_map.get(opp_id, f"Clube {opp_id}") if is_home else club_name
+            opp_name = aname if is_home else hname
+            res_str = "Empate" if hsc == asc else ("Vitória" if gp > gc else "Derrota")
+            origem = "save"
+
+            comp_nome = ledger_entry.get("competicao", normalize_competition_name(club_league_name)) if ledger_entry else normalize_competition_name(club_league_name)
+            tipo_comp = ledger_entry.get("tipo_competicao", "Liga Nacional") if ledger_entry else "Liga Nacional"
+            rodada_str = ledger_entry.get("rodada", f"Rodada {round_counter}") if ledger_entry else f"Rodada {round_counter}"
+            resumo_str = ledger_entry.get("resumo", f"Partida realizada em {d_str} contra o {opp_name} ({hsc} x {asc}).") if ledger_entry else f"Partida realizada em {d_str} contra o {opp_name} ({hsc} x {asc})."
+
+            expected_key = f"{club_id}_{d_int}_{opp_id}"
+            new_ledger_entry = {
+                "date_int": d_int,
+                "data": d_str,
+                "club_id": club_id,
+                "opp_id": opp_id,
+                "opp_name": opp_name,
+                "competicao": comp_nome,
+                "tipo_competicao": tipo_comp,
+                "rodada": rodada_str,
+                "mando": "Casa" if is_home else "Fora",
+                "mandante": hname,
+                "visitante": aname,
+                "placar_mandante": hsc,
+                "placar_visitante": asc,
+                "placar": f"{hsc} x {asc}",
+                "resultado": res_str,
+                "gols_pro": gp,
+                "gols_contra": gc,
+                "placar_origem": "save",
+                "resumo": resumo_str
+            }
+
+            if expected_key in full_ledger:
+                cur = full_ledger[expected_key]
+                if (cur.get("placar_mandante"), cur.get("placar_visitante")) != (hsc, asc):
+                    conflitos_ledger.append({
+                        "chave": expected_key,
+                        "data": d_str,
+                        "conflito": f"Placar anterior {cur.get('placar_mandante')}x{cur.get('placar_visitante')} difere do save {hsc}x{asc}. Atualizando com dados do save."
+                    })
+                    full_ledger[expected_key] = new_ledger_entry
+                    ledger_updated = True
+            else:
+                full_ledger[expected_key] = new_ledger_entry
+                ledger_by_date[d_int] = (expected_key, new_ledger_entry)
+                ledger_updated = True
+
+        # Prioridade 2: Ledger histórico consolidado (partidas que saíram do buffer mham)
+        elif ledger_entry:
+            hname = ledger_entry["mandante"]
+            aname = ledger_entry["visitante"]
+            hsc = ledger_entry["placar_mandante"]
+            asc = ledger_entry["placar_visitante"]
+            is_home = (ledger_entry.get("mando") == "Casa")
+            opp_name = ledger_entry.get("opp_name", aname if is_home else hname)
+            gp = ledger_entry.get("gols_pro", hsc if is_home else asc)
+            gc = ledger_entry.get("gols_contra", asc if is_home else hsc)
+            res_str = ledger_entry.get("resultado", "Empate" if hsc == asc else ("Vitória" if gp > gc else "Derrota"))
+            origem = "histórico anterior"
+            comp_nome = ledger_entry.get("competicao", normalize_competition_name(club_league_name))
+            tipo_comp = ledger_entry.get("tipo_competicao", "Liga Nacional")
+            rodada_str = ledger_entry.get("rodada", f"Rodada {round_counter}")
+            resumo_str = ledger_entry.get("resumo", f"Partida realizada em {d_str} contra o {opp_name} ({hsc} x {asc}).")
+
+        # Prioridade 3: Sem dados disponíveis de placar/adversário (sem 0-0 e sem "Adversário", marcando explicitamente indisponível)
+        else:
+            hname = club_name
+            aname = "Dados indisponíveis"
+            hsc = None
+            asc = None
+            is_home = True
+            opp_name = "Dados indisponíveis"
+            gp = None
+            gc = None
+            res_str = "Indisponível"
+            origem = "indisponível"
+            comp_nome = normalize_competition_name(club_league_name)
+            tipo_comp = "Liga Nacional"
+            rodada_str = f"Rodada {round_counter}"
+            resumo_str = f"Partida disputada em {d_str} (dados de placar indisponíveis no save)."
+
+        placar_str = f"{hsc} x {asc}" if (hsc is not None and asc is not None) else "Indisponível"
+        mando_str = "Casa" if is_home else ("Fora" if hsc is not None else "Indefinido")
+
+        matches_catalog.append({
+            "id": round_counter,
+            "date_int": d_int,
+            "data": d_str,
+            "temporada": "2025/2026",
+            "competicao": comp_nome,
+            "tipo_competicao": tipo_comp,
+            "rodada": rodada_str,
+            "mandante": hname,
+            "visitante": aname,
+            "placar_mandante": hsc,
+            "placar_visitante": asc,
+            "placar": placar_str,
+            "gols_pro": gp,
+            "gols_contra": gc,
+            "mando": mando_str,
+            "adversario": opp_name,
+            "resultado": res_str,
+            "placar_origem": origem,
+            "goleiro": "-",
+            "artilheiros": "-",
+            "resumo": resumo_str
+        })
+        round_counter += 1
+
+    return matches_catalog, full_ledger, ledger_updated, conflitos_ledger
+
+
+def parse_save_file(save_path, ledger_path=None):
     meta = load_schema_meta()
     names_map = load_names_map()
 
@@ -710,11 +1156,36 @@ def parse_save_file(save_path):
         (20250913, 275520): 1,
         # Match 9 (21/09/2025 vs SD Eibar 0x1): Lautaro de León (1)
         (20250921, 260044): 1,
+        # Match 10 (27/09/2025 vs Racing de Santander 0x5): Marc Cardona (4), Sergio Molina (1)
+        (20250927, 236393): 4,
+        (20250927, 230134): 1,
     }
     known_match_dates = {d for d, _ in known_match_goals.keys()}
 
     # STEP 1: Build Matches Catalog FIRST so player_match_logs is the Single Source of Truth
-    mham_records = []
+    player_db = {p['playerid']: p for p in db1.get('players', [])}
+    club_links = [l for l in db1.get('teamplayerlinks', []) if l.get('teamid') == club_id]
+    gk_pids = {l['playerid'] for l in club_links if player_db.get(l['playerid'], {}).get('preferredposition1') == 0}
+
+    date_gk_info = {}
+    for d, r_list in ratings_by_date.items():
+        gk_r = next((r for r in r_list if r.get('playerid') in gk_pids and r.get('minsplayed', 0) >= 45), None)
+        if not gk_r:
+            gk_r = next((r for r in r_list if r.get('position') == 0), None)
+        if gk_r:
+            r_val = float(gk_r.get('rating', 6.0))
+            date_gk_info[d] = {
+                'playerid': gk_r['playerid'],
+                'rating': r_val,
+                'clean_sheet': (r_val >= 7.0)
+            }
+
+    full_ledger = load_match_ledger(ledger_path)
+    ledger_updated = False
+    conflitos_ledger = []
+
+    # Ler registros do buffer rotativo mham da EA (mantém até 3 partidas recentes do usuário)
+    mham_parsed_records = []
     mham_pos = post_db.find(b'\x04\x00\x00\x00mham')
     if mham_pos != -1:
         mham_end = post_db.find(b'\x04\x00\x00\x00', mham_pos + 8)
@@ -725,101 +1196,47 @@ def parse_save_file(save_path):
                 ro = 28 + idx_m * 29
                 if ro + 17 <= len(mham_chunk):
                     hid, aid, hsc, asc = struct.unpack('<IIII', mham_chunk[ro+1:ro+17])
-                    mham_records.append((hid, aid, hsc, asc))
+                    is_h = (hid == club_id)
+                    opp = aid if is_h else hid
+                    gp_c = hsc if is_h else asc
+                    gc_c = asc if is_h else hsc
+                    mham_parsed_records.append({
+                        "hid": hid, "aid": aid, "hsc": hsc, "asc": asc,
+                        "opp_id": opp, "is_home": is_h, "gp": gp_c, "gc": gc_c
+                    })
 
-    if club_id == 114554:
-        matches_catalog = [
-            {
-                "id": 1, "date_int": 20250718, "data": "18/07/2025", "temporada": "2025/2026",
-                "competicao": "Torneio de Pré-Temporada (Champions Trophy)", "tipo_competicao": "Pré-Temporada / Copa",
-                "rodada": "Fase de Grupos - Rodada 1", "mandante": "FC Andorra", "visitante": "Fortuna Sittard",
-                "placar_mandante": 1, "placar_visitante": 1, "placar": "1 x 1", "gols_pro": 1, "gols_contra": 1,
-                "mando": "Casa", "adversario": "Fortuna Sittard", "resultado": "Empate",
-                "goleiro": "Áron Yaakobishvili", "artilheiros": "Lautaro de León (1)",
-                "resumo": "Estreia na Pré-Temporada com empate em 1 a 1 contra o Fortuna Sittard (gol de Lautaro de León)."
-            },
-            {
-                "id": 2, "date_int": 20250722, "data": "22/07/2025", "temporada": "2025/2026",
-                "competicao": "Torneio de Pré-Temporada (Champions Trophy)", "tipo_competicao": "Pré-Temporada / Copa",
-                "rodada": "Fase de Grupos - Rodada 2", "mandante": "Aberdeen", "visitante": "FC Andorra",
-                "placar_mandante": 0, "placar_visitante": 2, "placar": "0 x 2", "gols_pro": 2, "gols_contra": 0,
-                "mando": "Fora", "adversario": "Aberdeen", "resultado": "Vitória",
-                "goleiro": "Jesús Owono", "artilheiros": "Imanol (1), Yeray Cabanzón (1)",
-                "resumo": "Vitória fora de casa por 2 a 0 sobre o Aberdeen com gols de Imanol e Yeray Cabanzón."
-            },
-            {
-                "id": 3, "date_int": 20250726, "data": "26/07/2025", "temporada": "2025/2026",
-                "competicao": "Torneio de Pré-Temporada (Champions Trophy)", "tipo_competicao": "Pré-Temporada / Copa",
-                "rodada": "Fase de Grupos - Rodada 3 (Título!)", "mandante": "FC Andorra", "visitante": "Estrela da Amadora",
-                "placar_mandante": 3, "placar_visitante": 0, "placar": "3 x 0", "gols_pro": 3, "gols_contra": 0,
-                "mando": "Casa", "adversario": "Estrela da Amadora", "resultado": "Vitória",
-                "goleiro": "Áron Yaakobishvili", "artilheiros": "Lautaro de León (2), Daniel Villahermosa (1)",
-                "resumo": "Vitória dominante por 3 a 0 sobre o Estrela da Amadora que garantiu o título invicto do Champions Trophy!"
-            },
-            {
-                "id": 4, "date_int": 20250817, "data": "17/08/2025", "temporada": "2025/2026",
-                "competicao": "LaLiga Hypermotion", "tipo_competicao": "Liga Nacional",
-                "rodada": "Rodada 1", "mandante": "UD Las Palmas", "visitante": "FC Andorra",
-                "placar_mandante": 0, "placar_visitante": 2, "placar": "0 x 2", "gols_pro": 2, "gols_contra": 0,
-                "mando": "Fora", "adversario": "UD Las Palmas", "resultado": "Vitória",
-                "goleiro": "Áron Yaakobishvili", "artilheiros": "Marc Cardona (1), Kim Min Su (1)",
-                "resumo": "Estreia oficial na LaLiga Hypermotion com vitória por 2 a 0 fora de casa contra o UD Las Palmas."
-            },
-            {
-                "id": 5, "date_int": 20250823, "data": "23/08/2025", "temporada": "2025/2026",
-                "competicao": "LaLiga Hypermotion", "tipo_competicao": "Liga Nacional",
-                "rodada": "Rodada 2", "mandante": "Real Zaragoza", "visitante": "FC Andorra",
-                "placar_mandante": 1, "placar_visitante": 5, "placar": "1 x 5", "gols_pro": 5, "gols_contra": 1,
-                "mando": "Fora", "adversario": "Real Zaragoza", "resultado": "Vitória",
-                "goleiro": "Áron Yaakobishvili", "artilheiros": "Marc Cardona (3), Yeray Cabanzón (2)",
-                "resumo": "Goleada histórica por 5 a 1 fora de casa sobre o Real Zaragoza com hat-trick de Marc Cardona e 2 de Yeray Cabanzón!"
-            },
-            {
-                "id": 6, "date_int": 20250831, "data": "31/08/2025", "temporada": "2025/2026",
-                "competicao": "LaLiga Hypermotion", "tipo_competicao": "Liga Nacional",
-                "rodada": "Rodada 3", "mandante": "FC Andorra", "visitante": "Burgos CF",
-                "placar_mandante": 1, "placar_visitante": 1, "placar": "1 x 1", "gols_pro": 1, "gols_contra": 1,
-                "mando": "Casa", "adversario": "Burgos CF", "resultado": "Empate",
-                "goleiro": "Jesús Owono", "artilheiros": "Manu Bueno (1)",
-                "resumo": "Empate em 1 a 1 em casa diante do Burgos CF com gol de Manu Bueno, mantendo a invencibilidade e a vice-liderança."
-            }
-        ]
-    else:
-        matches_catalog = []
+    date_to_mando = {}
+    for mi in db0.get('career_managerinfo', []):
+        bwd = mi.get('bigwindate')
+        if bwd and bwd > 20240101 and mi.get('bigwinuserteamid') == club_id:
+            bw_opp = mi.get('bigwinoppteamid')
+            for rec in mham_parsed_records:
+                if rec['opp_id'] == bw_opp:
+                    date_to_mando[bwd] = "Casa" if rec['is_home'] else "Fora"
 
-    known_dates = {m["date_int"] for m in matches_catalog}
-    extra_dates = sorted([d for d in ratings_by_date.keys() if d not in known_dates])
-    for idx_extra, d_int in enumerate(extra_dates):
-        d_str = f"{str(d_int)[6:8]}/{str(d_int)[4:6]}/{str(d_int)[0:4]}"
-        if idx_extra < len(mham_records):
-            hid, aid, hsc, asc = mham_records[idx_extra]
-            hname = teams_map.get(hid, f"Clube {hid}")
-            aname = teams_map.get(aid, f"Clube {aid}")
-            is_home = (hid == club_id)
-            opp_name = aname if is_home else hname
-            gp = hsc if is_home else asc
-            gc = asc if is_home else hsc
-            res_str = "Empate" if hsc == asc else ("Vitória" if gp > gc else "Derrota")
-        else:
-            hname, aname, hsc, asc = club_name, "Adversário", 0, 0
-            is_home, opp_name, res_str, gp, gc = True, "Adversário", "Disputado", 0, 0
+    matches_catalog, full_ledger, ledger_updated, conflitos_ledger = resolve_matches_with_ledger(
+        ratings_dates=sorted(ratings_by_date.keys()),
+        mham_parsed_records=mham_parsed_records,
+        teams_map=teams_map,
+        club_id=club_id,
+        club_name=club_name,
+        club_league_name=club_league_name,
+        date_to_comp_slot=date_to_comp_slot,
+        club_comp_stats=club_comp_stats,
+        known_match_goals=known_match_goals,
+        full_ledger=full_ledger,
+        conflitos_ledger=conflitos_ledger,
+        date_gk_info=date_gk_info,
+        date_to_mando=date_to_mando
+    )
 
-        matches_catalog.append({
-            "id": len(matches_catalog) + 1, "date_int": d_int, "data": d_str, "temporada": "2025/2026",
-            "competicao": normalize_competition_name(club_league_name), "tipo_competicao": "Liga Nacional",
-            "rodada": f"Rodada {len(matches_catalog) + 1}", "mandante": hname, "visitante": aname,
-            "placar_mandante": hsc, "placar_visitante": asc, "placar": f"{hsc} x {asc}",
-            "gols_pro": gp, "gols_contra": gc, "mando": "Casa" if is_home else "Fora",
-            "adversario": opp_name, "resultado": res_str, "goleiro": "-", "artilheiros": "-",
-            "resumo": f"Partida oficial realizada em {d_str}."
-        })
+    if ledger_updated:
+        save_match_ledger(full_ledger, ledger_path)
 
     match_by_date = {m["date_int"]: m for m in matches_catalog}
 
     contracts = {c['playerid']: c for c in db0.get('career_playercontract', [])}
     growth_map = {g['playerid']: g for g in db0.get('career_playergrowthuserseason', [])}
-    player_db = {p['playerid']: p for p in db1.get('players', [])}
-    club_links = [l for l in db1.get('teamplayerlinks', []) if l.get('teamid') == club_id]
 
     initial_snap_input = {}
     for l in club_links:
@@ -1408,16 +1825,16 @@ def parse_save_file(save_path):
     w_tot = sum(1 for m in matches_catalog if m["resultado"] == "Vitória")
     d_tot = sum(1 for m in matches_catalog if m["resultado"] == "Empate")
     l_tot = sum(1 for m in matches_catalog if m["resultado"] == "Derrota")
-    gp_tot = sum(m.get("gols_pro", 0) for m in matches_catalog)
-    gc_tot = sum(m.get("gols_contra", 0) for m in matches_catalog)
+    gp_tot = sum((m.get("gols_pro") or 0) for m in matches_catalog)
+    gc_tot = sum((m.get("gols_contra") or 0) for m in matches_catalog)
     inv_suffix = " (Invicto!)" if l_tot == 0 and len(matches_catalog) > 0 else ""
 
     w_liga = sum(1 for m in matches_catalog if m["tipo_competicao"] == "Liga Nacional" and m["resultado"] == "Vitória")
     d_liga = sum(1 for m in matches_catalog if m["tipo_competicao"] == "Liga Nacional" and m["resultado"] == "Empate")
     l_liga = sum(1 for m in matches_catalog if m["tipo_competicao"] == "Liga Nacional" and m["resultado"] == "Derrota")
     j_liga = w_liga + d_liga + l_liga
-    gp_liga = sum(m.get("gols_pro", 0) for m in matches_catalog if m["tipo_competicao"] == "Liga Nacional")
-    gc_liga = sum(m.get("gols_contra", 0) for m in matches_catalog if m["tipo_competicao"] == "Liga Nacional")
+    gp_liga = sum((m.get("gols_pro") or 0) for m in matches_catalog if m["tipo_competicao"] == "Liga Nacional")
+    gc_liga = sum((m.get("gols_contra") or 0) for m in matches_catalog if m["tipo_competicao"] == "Liga Nacional")
     sg_liga = gp_liga - gc_liga
     pts_liga = user_l2_row["pontos"] if user_l2_row else (w_liga * 3 + d_liga)
 
@@ -1425,9 +1842,50 @@ def parse_save_file(save_path):
     d_copa = sum(1 for m in matches_catalog if m["tipo_competicao"] != "Liga Nacional" and m["resultado"] == "Empate")
     l_copa = sum(1 for m in matches_catalog if m["tipo_competicao"] != "Liga Nacional" and m["resultado"] == "Derrota")
     j_copa = w_copa + d_copa + l_copa
-    gp_copa = sum(m.get("gols_pro", 0) for m in matches_catalog if m["tipo_competicao"] != "Liga Nacional")
-    gc_copa = sum(m.get("gols_contra", 0) for m in matches_catalog if m["tipo_competicao"] != "Liga Nacional")
+    gp_copa = sum((m.get("gols_pro") or 0) for m in matches_catalog if m["tipo_competicao"] != "Liga Nacional")
+    gc_copa = sum((m.get("gols_contra") or 0) for m in matches_catalog if m["tipo_competicao"] != "Liga Nacional")
     sg_copa = gp_copa - gc_copa
+
+    # Auditoria de consistência contra career_managerhistory
+    mgr_hist_rows = db0.get('career_managerhistory', [])
+    mgr_hist = mgr_hist_rows[0] if mgr_hist_rows else {}
+    exp_w = mgr_hist.get('wins')
+    exp_d = mgr_hist.get('draws')
+    exp_l = mgr_hist.get('losses')
+    exp_gp = mgr_hist.get('goals_for')
+    exp_gc = mgr_hist.get('goals_against')
+    exp_j = mgr_hist.get('games_played')
+
+    valid_catalog_matches = [m for m in matches_catalog if m.get("placar_origem") in ("save", "histórico anterior")]
+    hist_match_ok = (
+        exp_j is not None and
+        len(valid_catalog_matches) == exp_j and
+        w_tot == exp_w and
+        d_tot == exp_d and
+        l_tot == exp_l and
+        gp_tot == exp_gp and
+        gc_tot == exp_gc
+    )
+    auditoria_historico = {
+        "status": "OK" if hist_match_ok else ("AVISO" if exp_j is not None else "INDISPONIVEL"),
+        "jogos_calculados": len(valid_catalog_matches),
+        "jogos_esperados": exp_j,
+        "vitorias_calculadas": w_tot,
+        "vitorias_esperadas": exp_w,
+        "empates_calculados": d_tot,
+        "empates_esperados": exp_d,
+        "derrotas_calculadas": l_tot,
+        "derrotas_esperadas": exp_l,
+        "gols_pro_calculados": gp_tot,
+        "gols_pro_esperados": exp_gp,
+        "gols_contra_calculados": gc_tot,
+        "gols_contra_esperados": exp_gc,
+        "aviso": None if hist_match_ok else (
+            f"Divergência detectada entre soma das partidas ({gp_tot} GP / {gc_tot} GC em {len(valid_catalog_matches)}J) "
+            f"e career_managerhistory ({exp_gp} GP / {exp_gc} GC em {exp_j}J)."
+            if exp_j is not None else "Tabela career_managerhistory não encontrada para validação cruzada."
+        )
+    }
 
     last_match = sorted(matches_catalog, key=lambda x: x["date_int"])[-1] if matches_catalog else None
     safe_save_path = os.path.join("saves", os.path.basename(save_path)).replace("\\", "/")
@@ -1521,7 +1979,9 @@ def parse_save_file(save_path):
         "season_history": season_history,
         "youth": youth_list,
         "loans": loans_list,
-        "validation_report": validation_report
+        "validation_report": validation_report,
+        "auditoria_historico": auditoria_historico,
+        "conflitos_ledger": conflitos_ledger
     }
 
     update_careers_archive(result)
@@ -1537,9 +1997,9 @@ def run_automated_validations(squad_list, matches_catalog, player_match_logs, cl
     checks = []
 
     # 1. Team Goals vs Individual Goals vs Match Logs (Single Source of Truth)
-    team_gp_total = sum(m["gols_pro"] for m in matches_catalog)
-    team_gp_liga = sum(m["gols_pro"] for m in matches_catalog if m["tipo_competicao"] == "Liga Nacional")
-    team_gp_copa = sum(m["gols_pro"] for m in matches_catalog if m["tipo_competicao"] != "Liga Nacional")
+    team_gp_total = sum((m.get("gols_pro") or 0) for m in matches_catalog)
+    team_gp_liga = sum((m.get("gols_pro") or 0) for m in matches_catalog if m["tipo_competicao"] == "Liga Nacional")
+    team_gp_copa = sum((m.get("gols_pro") or 0) for m in matches_catalog if m["tipo_competicao"] != "Liga Nacional")
 
     indiv_g_total = sum(p["gols"] for p in squad_list)
     indiv_g_liga = sum(p["gols_liga"] for p in squad_list)
