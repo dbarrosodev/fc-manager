@@ -149,6 +149,36 @@
       "potencial": 69,
       "valor_mercado": 525000,
       "data_registro": "31/08/2025"
+    },
+    "186555": {
+      "overall": 77,
+      "potencial": 77,
+      "valor_mercado": 950000,
+      "data_registro": "29/11/2025"
+    },
+    "217141": {
+      "overall": 64,
+      "potencial": 66,
+      "valor_mercado": 350000,
+      "data_registro": "29/11/2025"
+    },
+    "222895": {
+      "overall": 76,
+      "potencial": 76,
+      "valor_mercado": 7500000,
+      "data_registro": "29/11/2025"
+    },
+    "234726": {
+      "overall": 72,
+      "potencial": 73,
+      "valor_mercado": 2900000,
+      "data_registro": "29/11/2025"
+    },
+    "273106": {
+      "overall": 77,
+      "potencial": 81,
+      "valor_mercado": 15500000,
+      "data_registro": "29/11/2025"
     }
   }
 }

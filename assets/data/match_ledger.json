@@ -17,7 +17,11 @@
     "gols_pro": 1,
     "gols_contra": 1,
     "resumo": "Estreia na Pré-Temporada com empate em 1 a 1 contra o Fortuna Sittard (gol de Lautaro de León).",
-    "club_id": 114554
+    "club_id": 114554,
+    "artilheiros": "Lautaro de León (1)",
+    "gols_por_jogador": {
+      "260044": 1
+    }
   },
   "114554_20250722_77": {
     "date_int": 20250722,
@@ -37,7 +41,12 @@
     "gols_pro": 2,
     "gols_contra": 0,
     "resumo": "Vitória fora de casa por 2 a 0 sobre o Aberdeen com gols de Imanol e Yeray Cabanzón.",
-    "club_id": 114554
+    "club_id": 114554,
+    "artilheiros": "Yeray Cabanzón (1), Imanol (1)",
+    "gols_por_jogador": {
+      "273022": 1,
+      "263006": 1
+    }
   },
   "114554_20250726_718": {
     "date_int": 20250726,
@@ -57,7 +66,12 @@
     "gols_pro": 3,
     "gols_contra": 0,
     "resumo": "Vitória dominante por 3 a 0 sobre o Estrela da Amadora que garantiu o título invicto do Champions Trophy!",
-    "club_id": 114554
+    "club_id": 114554,
+    "artilheiros": "Lautaro de León (2), Daniel Villahermosa (1)",
+    "gols_por_jogador": {
+      "260044": 2,
+      "266100": 1
+    }
   },
   "114554_20250817_472": {
     "date_int": 20250817,
@@ -77,7 +91,12 @@
     "gols_pro": 2,
     "gols_contra": 0,
     "resumo": "Estreia oficial na LaLiga Hypermotion com vitória por 2 a 0 fora de casa contra o UD Las Palmas.",
-    "club_id": 114554
+    "club_id": 114554,
+    "artilheiros": "Kim Min Su (1), Marc Cardona (1)",
+    "gols_por_jogador": {
+      "75437": 1,
+      "236393": 1
+    }
   },
   "114554_20250823_244": {
     "date_int": 20250823,
@@ -97,7 +116,12 @@
     "gols_pro": 5,
     "gols_contra": 1,
     "resumo": "Goleada histórica por 5 a 1 fora de casa sobre o Real Zaragoza com hat-trick de Marc Cardona e 2 de Yeray Cabanzón!",
-    "club_id": 114554
+    "club_id": 114554,
+    "artilheiros": "Yeray Cabanzón (2), Marc Cardona (3)",
+    "gols_por_jogador": {
+      "273022": 2,
+      "236393": 3
+    }
   },
   "114554_20250831_111005": {
     "date_int": 20250831,
@@ -117,7 +141,11 @@
     "gols_pro": 1,
     "gols_contra": 1,
     "resumo": "Empate em 1 a 1 em casa diante do Burgos CF com gol de Manu Bueno, mantendo a invencibilidade e a vice-liderança.",
-    "club_id": 114554
+    "club_id": 114554,
+    "artilheiros": "Manu Bueno (1)",
+    "gols_por_jogador": {
+      "275520": 1
+    }
   },
   "114554_20250907_110069": {
     "date_int": 20250907,
@@ -137,7 +165,12 @@
     "gols_pro": 2,
     "gols_contra": 0,
     "resumo": "Vitória consistente por 2 a 0 em casa diante do CD Mirandés com gols de Lautaro de León e Aingeru Olabarrieta.",
-    "club_id": 114554
+    "club_id": 114554,
+    "artilheiros": "Lautaro de León (1), Aingeru Olabarrieta (1)",
+    "gols_por_jogador": {
+      "260044": 1,
+      "279603": 1
+    }
   },
   "114554_20250913_1867": {
     "date_int": 20250913,
@@ -157,7 +190,12 @@
     "gols_pro": 2,
     "gols_contra": 2,
     "resumo": "Empate movimentado em 2 a 2 em casa contra o Córdoba CF com gols de Marc Cardona e Manu Bueno.",
-    "club_id": 114554
+    "club_id": 114554,
+    "artilheiros": "Marc Cardona (1), Manu Bueno (1)",
+    "gols_por_jogador": {
+      "236393": 1,
+      "275520": 1
+    }
   },
   "114554_20250921_467": {
     "date_int": 20250921,
@@ -177,7 +215,11 @@
     "gols_pro": 1,
     "gols_contra": 0,
     "resumo": "Grande vitória por 1 a 0 fora de casa sobre o SD Eibar com gol solitário de Lautaro de León.",
-    "club_id": 114554
+    "club_id": 114554,
+    "artilheiros": "Lautaro de León (1)",
+    "gols_por_jogador": {
+      "260044": 1
+    }
   },
   "114554_20250927_456": {
     "date_int": 20250927,
@@ -197,7 +239,12 @@
     "gols_pro": 5,
     "gols_contra": 0,
     "resumo": "Goleada espetacular por 5 a 0 fora de casa sobre o Racing de Santander com 4 gols de Marc Cardona e 1 de Sergio Molina!",
-    "club_id": 114554
+    "club_id": 114554,
+    "artilheiros": "Marc Cardona (4), Sergio Molina (1)",
+    "gols_por_jogador": {
+      "236393": 4,
+      "230134": 1
+    }
   },
   "114554_20251004_100888": {
     "date_int": 20251004,
@@ -218,7 +265,11 @@
     "gols_pro": 1,
     "gols_contra": 1,
     "placar_origem": "save",
-    "resumo": "Partida realizada em 04/10/2025 contra o CD Leganés (1 x 1)."
+    "resumo": "Partida realizada em 04/10/2025 contra o CD Leganés (1 x 1).",
+    "artilheiros": "Marc Cardona (1)",
+    "gols_por_jogador": {
+      "236393": 1
+    }
   },
   "114554_20251012_110711": {
     "date_int": 20251012,
@@ -239,7 +290,11 @@
     "gols_pro": 4,
     "gols_contra": 0,
     "placar_origem": "save",
-    "resumo": "Partida realizada em 12/10/2025 contra o Real Sociedad B (0 x 4)."
+    "resumo": "Partida realizada em 12/10/2025 contra o Real Sociedad B (0 x 4).",
+    "artilheiros": "Marc Cardona (4)",
+    "gols_por_jogador": {
+      "236393": 4
+    }
   },
   "114554_20251019_110832": {
     "date_int": 20251019,
@@ -260,6 +315,115 @@
     "gols_pro": 3,
     "gols_contra": 2,
     "placar_origem": "save",
-    "resumo": "Partida realizada em 19/10/2025 contra o Granada CF (3 x 2)."
+    "resumo": "Partida realizada em 19/10/2025 contra o Granada CF (3 x 2).",
+    "artilheiros": "Sergio Molina (2), Marc Cardona (1)",
+    "gols_por_jogador": {
+      "230134": 2,
+      "236393": 1
+    }
+  },
+  "114554_20251129_100852": {
+    "date_int": 20251129,
+    "data": "29/11/2025",
+    "club_id": 114554,
+    "opp_id": 100852,
+    "opp_name": "CD Castellón",
+    "competicao": "LaLiga Hypermotion",
+    "tipo_competicao": "Liga Nacional",
+    "rodada": "Rodada 19",
+    "mando": "Casa",
+    "mandante": "FC Andorra",
+    "visitante": "CD Castellón",
+    "placar_mandante": 2,
+    "placar_visitante": 0,
+    "placar": "2 x 0",
+    "resultado": "Vitória",
+    "gols_pro": 2,
+    "gols_contra": 0,
+    "placar_origem": "save",
+    "resumo": "Partida realizada em 29/11/2025 contra o CD Castellón (2 x 0).",
+    "artilheiros": "Marc Cardona (2)",
+    "gols_por_jogador": {
+      "236393": 2
+    }
+  },
+  "114554_20251026_573": {
+    "date_int": 20251026,
+    "data": "26/10/2025",
+    "club_id": 114554,
+    "opp_id": 573,
+    "opp_name": "Málaga CF",
+    "competicao": "LaLiga Hypermotion",
+    "tipo_competicao": "Liga Nacional",
+    "rodada": "Rodada 14",
+    "mando": "Fora",
+    "mandante": "Málaga CF",
+    "visitante": "FC Andorra",
+    "placar_mandante": 0,
+    "placar_visitante": 7,
+    "placar": "0 x 7",
+    "resultado": "Vitória",
+    "gols_pro": 7,
+    "gols_contra": 0,
+    "placar_origem": "save",
+    "resumo": "Goleada histórica por 0 a 7 fora de casa sobre o Málaga CF!",
+    "artilheiros": "Marc Cardona (3), Manu Bueno (1), Yeray Cabanzón (2), Jastin (1)",
+    "gols_por_jogador": {
+      "236393": 3,
+      "275520": 1,
+      "273022": 2,
+      "278758": 1
+    }
+  },
+  "114554_20251114_1854": {
+    "date_int": 20251114,
+    "data": "14/11/2025",
+    "club_id": 114554,
+    "opp_id": 1854,
+    "opp_name": "Albacete Balompié",
+    "competicao": "LaLiga Hypermotion",
+    "tipo_competicao": "Liga Nacional",
+    "rodada": "Rodada 17",
+    "mando": "Fora",
+    "mandante": "Albacete Balompié",
+    "visitante": "FC Andorra",
+    "placar_mandante": 1,
+    "placar_visitante": 1,
+    "placar": "1 x 1",
+    "resultado": "Empate",
+    "gols_pro": 1,
+    "gols_contra": 1,
+    "placar_origem": "save",
+    "resumo": "Partida realizada em 14/11/2025 contra o Albacete Balompié (1 x 1).",
+    "artilheiros": "Marc Doménech (1)",
+    "gols_por_jogador": {
+      "79752": 1
+    }
+  },
+  "114554_20251122_459": {
+    "date_int": 20251122,
+    "data": "22/11/2025",
+    "club_id": 114554,
+    "opp_id": 459,
+    "opp_name": "Real Sporting de Gijón",
+    "competicao": "LaLiga Hypermotion",
+    "tipo_competicao": "Liga Nacional",
+    "rodada": "Rodada 18",
+    "mando": "Fora",
+    "mandante": "Real Sporting de Gijón",
+    "visitante": "FC Andorra",
+    "placar_mandante": 1,
+    "placar_visitante": 2,
+    "placar": "1 x 2",
+    "resultado": "Vitória",
+    "gols_pro": 2,
+    "gols_contra": 1,
+    "placar_origem": "save",
+    "resumo": "Partida realizada em 22/11/2025 contra o Real Sporting de Gijón (1 x 2).",
+    "artilheiros": "Manu Bueno (1), Sergio Molina (1)",
+    "gols_por_jogador": {
+      "275520": 1,
+      "230134": 1
+    }
   }
 }
